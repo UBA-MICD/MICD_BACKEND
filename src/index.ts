@@ -1,8 +1,9 @@
 import express from 'express'
 import cors from 'cors'
 import multer from 'multer'
-import { Pool } from 'pg'
 import axios from 'axios'
+import { pool, initDb } from './db'
+import { uploadStudy } from './upload'
 
 const app = express()
 const PORT = parseInt(process.env.PORT ?? '3000', 10)
@@ -10,22 +11,15 @@ const PORT = parseInt(process.env.PORT ?? '3000', 10)
 const ORTHANC_URL = process.env.ORTHANC_URL ?? 'http://orthanc:8042'
 const ORTHANC_USER = process.env.ORTHANC_USERNAME ?? 'orthanc'
 const ORTHANC_PASS = process.env.ORTHANC_PASSWORD ?? 'orthanc'
-
 const orthancAuth = { username: ORTHANC_USER, password: ORTHANC_PASS }
 
-const pool = new Pool({
-  host: process.env.DB_HOST ?? 'postgres',
-  port: parseInt(process.env.DB_PORT ?? '5432', 10),
-  database: process.env.DB_NAME ?? 'micd',
-  user: process.env.DB_USER ?? 'micd',
-  password: process.env.DB_PASSWORD ?? 'micd',
-})
-
+// multer: store in memory, no size limit here (validated in handler)
 const upload = multer({ storage: multer.memoryStorage() })
 
 app.use(cors())
 app.use(express.json())
 
+// ── Health ────────────────────────────────────────────────────────────────────
 app.get('/api/health', async (_req, res) => {
   try {
     await pool.query('SELECT 1')
@@ -39,11 +33,10 @@ app.get('/api/health', async (_req, res) => {
   }
 })
 
+// ── Studies (Orthanc proxy) ───────────────────────────────────────────────────
 app.get('/api/studies', async (_req, res) => {
   try {
-    const { data } = await axios.get(`${ORTHANC_URL}/studies`, {
-      auth: orthancAuth,
-    })
+    const { data } = await axios.get(`${ORTHANC_URL}/studies`, { auth: orthancAuth })
     res.json(data)
   } catch (err: any) {
     res.status(503).json({ error: 'Orthanc unavailable', detail: err.message })
@@ -65,7 +58,35 @@ app.get('/api/studies/:id', async (req, res) => {
   }
 })
 
-// Upload a DICOM instance; Orthanc returns the assigned study/series/instance IDs
+app.delete('/api/studies/:id', async (req, res) => {
+  try {
+    await axios.delete(`${ORTHANC_URL}/studies/${req.params.id}`, { auth: orthancAuth })
+    res.status(204).send()
+  } catch (err: any) {
+    if (err.response?.status === 404) {
+      res.status(404).json({ error: 'Study not found' })
+    } else {
+      res.status(503).json({ error: 'Orthanc unavailable', detail: err.message })
+    }
+  }
+})
+
+// ── Upload (v1) ───────────────────────────────────────────────────────────────
+app.post('/api/v1/studies/upload', upload.single('file'), uploadStudy)
+
+// ── Studies from DB (v1) ──────────────────────────────────────────────────────
+app.get('/api/v1/studies', async (_req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT * FROM studies ORDER BY uploaded_at DESC',
+    )
+    res.json(rows)
+  } catch (err: any) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ── Legacy upload (kept for backward compat) ──────────────────────────────────
 app.post('/api/instances', upload.single('file'), async (req, res) => {
   if (!req.file) {
     res.status(400).json({ error: 'No DICOM file provided (field: file)' })
@@ -87,23 +108,14 @@ app.post('/api/instances', upload.single('file'), async (req, res) => {
   }
 })
 
-app.delete('/api/studies/:id', async (req, res) => {
-  try {
-    await axios.delete(`${ORTHANC_URL}/studies/${req.params.id}`, {
-      auth: orthancAuth,
-    })
-    res.status(204).send()
-  } catch (err: any) {
-    if (err.response?.status === 404) {
-      res.status(404).json({ error: 'Study not found' })
-    } else {
-      res.status(503).json({ error: 'Orthanc unavailable', detail: err.message })
-    }
-  }
-})
-
-app.listen(PORT, () => {
-  console.log(`MICD backend listening on port ${PORT}`)
-})
+// ── Start ─────────────────────────────────────────────────────────────────────
+initDb()
+  .then(() => {
+    app.listen(PORT, () => console.log(`MICD backend listening on port ${PORT}`))
+  })
+  .catch((err) => {
+    console.error('Failed to initialize DB:', err)
+    process.exit(1)
+  })
 
 export { app }
