@@ -144,13 +144,19 @@ describe('POST /api/v1/studies/upload', () => {
     expect(res.status).toBe(201)
   })
 
-  it('GET /api/v1/studies returns uploaded study from DB', async () => {
+  it('GET /api/v1/studies returns paginated response with uploaded study', async () => {
     if (!backendAvailable) return
     const { data } = await axios.get(`${BASE_URL}/api/v1/studies`)
-    expect(Array.isArray(data)).toBe(true)
-    expect(data.length).toBeGreaterThan(0)
-    expect(data[0]).toHaveProperty('modality')
-    expect(data[0]).toHaveProperty('study_date')
-    expect(data[0]).toHaveProperty('uploaded_at')
+    expect(data).toHaveProperty('studies')
+    expect(data).toHaveProperty('total')
+    expect(data).toHaveProperty('page')
+    expect(data).toHaveProperty('limit')
+    expect(data).toHaveProperty('totalPages')
+    expect(Array.isArray(data.studies)).toBe(true)
+    expect(data.studies.length).toBeGreaterThan(0)
+    expect(data.studies[0]).toHaveProperty('modality')
+    expect(data.studies[0]).toHaveProperty('study_date')
+    expect(data.studies[0]).toHaveProperty('uploaded_at')
+    expect(data.studies[0]).toHaveProperty('num_instances')
   })
 })

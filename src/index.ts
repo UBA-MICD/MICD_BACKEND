@@ -101,15 +101,81 @@ app.get('/api/v1/studies/:studyId/file', async (req, res) => {
 // ── Upload (v1) ───────────────────────────────────────────────────────────────
 app.post('/api/v1/studies/upload', upload.single('file'), uploadStudy)
 
-// ── Studies from DB (v1) ──────────────────────────────────────────────────────
-app.get('/api/v1/studies', async (_req, res) => {
+// ── Studies from DB — paginated, filtered (v1) ────────────────────────────────
+app.get('/api/v1/studies', async (req, res) => {
   try {
-    const { rows } = await pool.query(
-      'SELECT * FROM studies ORDER BY uploaded_at DESC',
-    )
-    res.json(rows)
+    const page     = Math.max(1, parseInt(req.query.page     as string) || 1)
+    const limit    = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20))
+    const offset   = (page - 1) * limit
+    const modality = (req.query.modality  as string) || null
+    const dateFrom = (req.query.date_from as string) || null
+    const dateTo   = (req.query.date_to   as string) || null
+    const search   = (req.query.search    as string) || null
+
+    const { rows } = await pool.query<Record<string, any>>(`
+      SELECT *, COUNT(*) OVER () AS total_count
+      FROM (
+        SELECT
+          MIN(id)                  AS id,
+          orthanc_study_id,
+          MIN(orthanc_instance_id) AS orthanc_instance_id,
+          MAX(patient_name)        AS patient_name,
+          MAX(patient_id)          AS patient_id,
+          MAX(study_date)          AS study_date,
+          MAX(modality)            AS modality,
+          MAX(study_description)   AS study_description,
+          MAX(uploaded_at)         AS uploaded_at,
+          COUNT(*)                 AS num_instances
+        FROM studies
+        WHERE
+          ($1::text IS NULL OR modality = $1)
+          AND ($2::text IS NULL OR study_date >= $2)
+          AND ($3::text IS NULL OR study_date <= $3)
+          AND (
+            $4::text IS NULL
+            OR patient_name ILIKE '%' || $4 || '%'
+            OR patient_id   ILIKE '%' || $4 || '%'
+          )
+        GROUP BY orthanc_study_id
+        ORDER BY MAX(uploaded_at) DESC
+      ) sub
+      LIMIT $5 OFFSET $6
+    `, [modality, dateFrom, dateTo, search, limit, offset])
+
+    const total = rows.length > 0 ? parseInt(rows[0].total_count as string, 10) : 0
+    const studies = rows.map(({ total_count, ...rest }) => rest)
+
+    res.json({ studies, total, page, limit, totalPages: Math.ceil(total / limit) })
   } catch (err: any) {
     res.status(500).json({ error: err.message })
+  }
+})
+
+// ── Study thumbnail (v1) ──────────────────────────────────────────────────────
+app.get('/api/v1/studies/:studyId/thumbnail', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT orthanc_instance_id FROM studies WHERE orthanc_study_id = $1 LIMIT 1',
+      [req.params.studyId],
+    )
+    if (rows.length === 0) {
+      res.status(404).json({ error: 'Study not found' })
+      return
+    }
+    const instanceId: string = rows[0].orthanc_instance_id
+    const { data, headers } = await axios.get<ArrayBuffer>(
+      `${ORTHANC_URL}/instances/${instanceId}/preview`,
+      { auth: orthancAuth, responseType: 'arraybuffer' },
+    )
+    res.setHeader('Content-Type', (headers['content-type'] as string) ?? 'image/jpeg')
+    res.setHeader('Cache-Control', 'public, max-age=3600')
+    res.send(Buffer.from(data))
+  } catch (err: any) {
+    if (err.response?.status === 404) {
+      res.status(404).json({ error: 'Instance not found in Orthanc' })
+    } else {
+      res.status(503).json({ error: 'Orthanc unavailable', detail: err.message })
+    }
   }
 })
 
