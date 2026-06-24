@@ -71,6 +71,33 @@ app.delete('/api/studies/:id', async (req, res) => {
   }
 })
 
+// ── DICOM file download (v1) ──────────────────────────────────────────────────
+app.get('/api/v1/studies/:studyId/file', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT orthanc_instance_id FROM studies WHERE orthanc_study_id = $1 LIMIT 1',
+      [req.params.studyId],
+    )
+    if (rows.length === 0) {
+      res.status(404).json({ error: 'Study not found' })
+      return
+    }
+    const instanceId: string = rows[0].orthanc_instance_id
+    const { data } = await axios.get<ArrayBuffer>(
+      `${ORTHANC_URL}/instances/${instanceId}/file`,
+      { auth: orthancAuth, responseType: 'arraybuffer' },
+    )
+    res.setHeader('Content-Type', 'application/dicom')
+    res.send(Buffer.from(data))
+  } catch (err: any) {
+    if (err.response?.status === 404) {
+      res.status(404).json({ error: 'Instance not found in Orthanc' })
+    } else {
+      res.status(503).json({ error: 'Orthanc unavailable', detail: err.message })
+    }
+  }
+})
+
 // ── Upload (v1) ───────────────────────────────────────────────────────────────
 app.post('/api/v1/studies/upload', upload.single('file'), uploadStudy)
 
