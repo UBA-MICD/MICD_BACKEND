@@ -75,7 +75,7 @@ app.delete('/api/studies/:id', async (req, res) => {
 app.get('/api/v1/studies/:studyId/file', async (req, res) => {
   try {
     const { rows } = await pool.query(
-      'SELECT orthanc_instance_id FROM studies WHERE orthanc_study_id = $1 LIMIT 1',
+      'SELECT orthanc_instance_id FROM studies WHERE orthanc_study_id = $1 ORDER BY id ASC LIMIT 1',
       [req.params.studyId],
     )
     if (rows.length === 0) {
@@ -112,38 +112,47 @@ app.get('/api/v1/studies', async (req, res) => {
     const dateTo   = (req.query.date_to   as string) || null
     const search   = (req.query.search    as string) || null
 
-    const { rows } = await pool.query<Record<string, any>>(`
-      SELECT *, COUNT(*) OVER () AS total_count
-      FROM (
-        SELECT
-          MIN(id)                  AS id,
-          orthanc_study_id,
-          MIN(orthanc_instance_id) AS orthanc_instance_id,
-          MAX(patient_name)        AS patient_name,
-          MAX(patient_id)          AS patient_id,
-          MAX(study_date)          AS study_date,
-          MAX(modality)            AS modality,
-          MAX(study_description)   AS study_description,
-          MAX(uploaded_at)         AS uploaded_at,
-          COUNT(*)                 AS num_instances
-        FROM studies
-        WHERE
-          ($1::text IS NULL OR modality = $1)
-          AND ($2::text IS NULL OR study_date >= $2)
-          AND ($3::text IS NULL OR study_date <= $3)
-          AND (
-            $4::text IS NULL
-            OR patient_name ILIKE '%' || $4 || '%'
-            OR patient_id   ILIKE '%' || $4 || '%'
-          )
-        GROUP BY orthanc_study_id
-        ORDER BY MAX(uploaded_at) DESC
-      ) sub
-      LIMIT $5 OFFSET $6
-    `, [modality, dateFrom, dateTo, search, limit, offset])
+    const filterArgs = [modality, dateFrom, dateTo, search]
+    const filterWhere = `
+      ($1::text IS NULL OR modality = $1)
+      AND ($2::text IS NULL OR study_date >= $2)
+      AND ($3::text IS NULL OR study_date <= $3)
+      AND (
+        $4::text IS NULL
+        OR patient_name ILIKE '%' || $4 || '%'
+        OR patient_id   ILIKE '%' || $4 || '%'
+      )`
 
-    const total = rows.length > 0 ? parseInt(rows[0].total_count as string, 10) : 0
-    const studies = rows.map(({ total_count, ...rest }) => rest)
+    const { rows: countRows } = await pool.query<{ total: string }>(`
+      SELECT COUNT(*) AS total
+      FROM (
+        SELECT orthanc_study_id FROM studies
+        WHERE ${filterWhere}
+        GROUP BY orthanc_study_id
+      ) sub
+    `, filterArgs)
+    const total = parseInt(countRows[0].total, 10)
+
+    const { rows } = await pool.query<Record<string, any>>(`
+      SELECT
+        MIN(id)                  AS id,
+        orthanc_study_id,
+        MIN(orthanc_instance_id) AS orthanc_instance_id,
+        MAX(patient_name)        AS patient_name,
+        MAX(patient_id)          AS patient_id,
+        MAX(study_date)          AS study_date,
+        MAX(modality)            AS modality,
+        MAX(study_description)   AS study_description,
+        MAX(uploaded_at)         AS uploaded_at,
+        COUNT(*)                 AS num_instances
+      FROM studies
+      WHERE ${filterWhere}
+      GROUP BY orthanc_study_id
+      ORDER BY MAX(uploaded_at) DESC
+      LIMIT $5 OFFSET $6
+    `, [...filterArgs, limit, offset])
+
+    const studies = rows
 
     res.json({ studies, total, page, limit, totalPages: Math.ceil(total / limit) })
   } catch (err: any) {
@@ -155,7 +164,7 @@ app.get('/api/v1/studies', async (req, res) => {
 app.get('/api/v1/studies/:studyId/thumbnail', async (req, res) => {
   try {
     const { rows } = await pool.query(
-      'SELECT orthanc_instance_id FROM studies WHERE orthanc_study_id = $1 LIMIT 1',
+      'SELECT orthanc_instance_id FROM studies WHERE orthanc_study_id = $1 ORDER BY id ASC LIMIT 1',
       [req.params.studyId],
     )
     if (rows.length === 0) {
@@ -173,33 +182,17 @@ app.get('/api/v1/studies/:studyId/thumbnail', async (req, res) => {
   } catch (err: any) {
     if (err.response?.status === 404) {
       res.status(404).json({ error: 'Instance not found in Orthanc' })
+    } else if (err.response?.status === 415 || err.response?.status === 400) {
+      // Orthanc cannot render a preview for this DICOM type (e.g. RT-STRUCT, SR)
+      res.status(422).json({ error: 'Preview not available for this DICOM type' })
     } else {
       res.status(503).json({ error: 'Orthanc unavailable', detail: err.message })
     }
   }
 })
 
-// ── Legacy upload (kept for backward compat) ──────────────────────────────────
-app.post('/api/instances', upload.single('file'), async (req, res) => {
-  if (!req.file) {
-    res.status(400).json({ error: 'No DICOM file provided (field: file)' })
-    return
-  }
-  try {
-    const { data } = await axios.post(`${ORTHANC_URL}/instances`, req.file.buffer, {
-      auth: orthancAuth,
-      headers: { 'Content-Type': 'application/dicom' },
-      maxBodyLength: Infinity,
-    })
-    res.status(201).json(data)
-  } catch (err: any) {
-    if (err.response?.status === 400) {
-      res.status(400).json({ error: 'Invalid DICOM file' })
-    } else {
-      res.status(503).json({ error: 'Orthanc unavailable', detail: err.message })
-    }
-  }
-})
+// ── Legacy upload — delegates to uploadStudy so instances appear in the explorer ──
+app.post('/api/instances', upload.single('file'), uploadStudy)
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 initDb()

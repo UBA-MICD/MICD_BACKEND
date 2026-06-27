@@ -25,9 +25,12 @@ export async function initDb(): Promise<void> {
       cols_count          INTEGER,
       uploaded_at         TIMESTAMPTZ DEFAULT NOW()
     );
+    CREATE EXTENSION IF NOT EXISTS pg_trgm;
     CREATE INDEX IF NOT EXISTS idx_studies_orthanc_study_id ON studies(orthanc_study_id);
-    CREATE INDEX IF NOT EXISTS idx_studies_modality        ON studies(modality);
-    CREATE INDEX IF NOT EXISTS idx_studies_study_date      ON studies(study_date);
-    CREATE INDEX IF NOT EXISTS idx_studies_patient_name    ON studies(patient_name text_pattern_ops);
+    CREATE INDEX IF NOT EXISTS idx_studies_modality         ON studies(modality);
+    CREATE INDEX IF NOT EXISTS idx_studies_study_date       ON studies(study_date);
+    DROP INDEX IF EXISTS idx_studies_patient_name;
+    CREATE INDEX IF NOT EXISTS idx_studies_patient_name_trgm ON studies USING gin (patient_name gin_trgm_ops);
+    CREATE INDEX IF NOT EXISTS idx_studies_patient_id_trgm   ON studies USING gin (patient_id   gin_trgm_ops);
   `)
 }
