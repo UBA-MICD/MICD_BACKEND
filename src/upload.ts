@@ -26,7 +26,7 @@ function normalizeText(value: unknown): string {
 }
 
 function extractTag(tags: Record<string, any>, tag: string): string {
-  return normalizeText(tags[tag]?.Value?.[0] ?? '')
+  return normalizeText(tags[tag]?.Value ?? '')
 }
 
 function extractInt(tags: Record<string, any>, tag: string): number | null {
