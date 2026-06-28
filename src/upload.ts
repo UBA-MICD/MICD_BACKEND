@@ -93,6 +93,7 @@ export const uploadStudy: RequestHandler = async (req, res) => {
   const studyDesc       = extractTag(tags, '0008,1030')
   const rawModality     = extractTag(tags, '0008,0060').toUpperCase()
   const modality        = rawModality || 'OTHER'
+  const instanceNumber  = extractInt(tags, '0020,0013')
   const rows            = extractInt(tags, '0028,0010')
   const cols            = extractInt(tags, '0028,0011')
 
@@ -125,8 +126,8 @@ export const uploadStudy: RequestHandler = async (req, res) => {
       `INSERT INTO studies
          (orthanc_study_id, orthanc_instance_id, sop_instance_uid, study_instance_uid,
           patient_name, patient_id, study_date, modality, study_description,
-          rows_count, cols_count)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+          instance_number, rows_count, cols_count)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
        ON CONFLICT (sop_instance_uid) DO UPDATE SET
          orthanc_study_id    = EXCLUDED.orthanc_study_id,
          orthanc_instance_id = EXCLUDED.orthanc_instance_id,
@@ -136,13 +137,14 @@ export const uploadStudy: RequestHandler = async (req, res) => {
          study_date          = EXCLUDED.study_date,
          modality            = EXCLUDED.modality,
          study_description   = EXCLUDED.study_description,
+         instance_number     = EXCLUDED.instance_number,
          rows_count          = EXCLUDED.rows_count,
          cols_count          = EXCLUDED.cols_count,
          uploaded_at         = NOW()
        RETURNING *`,
       [studyId, instanceId, sopInstanceUid, studyInstanceUid,
        patientName, patientId, studyDate, modality, studyDesc,
-       rows, cols],
+       instanceNumber, rows, cols],
     )
     inserted = result.rows
   } catch (err: any) {

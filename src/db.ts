@@ -21,10 +21,13 @@ export async function initDb(): Promise<void> {
       study_date          TEXT,
       modality            TEXT,
       study_description   TEXT,
+      instance_number     INTEGER,
       rows_count          INTEGER,
       cols_count          INTEGER,
       uploaded_at         TIMESTAMPTZ DEFAULT NOW()
     );
+    -- Backfill column for databases created before instance_number was tracked
+    ALTER TABLE studies ADD COLUMN IF NOT EXISTS instance_number INTEGER;
     CREATE EXTENSION IF NOT EXISTS pg_trgm;
     CREATE INDEX IF NOT EXISTS idx_studies_orthanc_study_id ON studies(orthanc_study_id);
     CREATE INDEX IF NOT EXISTS idx_studies_modality         ON studies(modality);

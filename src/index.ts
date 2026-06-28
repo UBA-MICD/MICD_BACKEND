@@ -4,6 +4,7 @@ import multer from 'multer'
 import axios from 'axios'
 import { pool, initDb } from './db'
 import { uploadStudy } from './upload'
+import { buildInstancesPayload, type InstanceRow } from './instances-util'
 
 const app = express()
 const PORT = parseInt(process.env.PORT ?? '3000', 10)
@@ -85,6 +86,49 @@ app.get('/api/v1/studies/:studyId/file', async (req, res) => {
     const instanceId: string = rows[0].orthanc_instance_id
     const { data } = await axios.get<ArrayBuffer>(
       `${ORTHANC_URL}/instances/${instanceId}/file`,
+      { auth: orthancAuth, responseType: 'arraybuffer' },
+    )
+    res.setHeader('Content-Type', 'application/dicom')
+    res.send(Buffer.from(data))
+  } catch (err: any) {
+    if (err.response?.status === 404) {
+      res.status(404).json({ error: 'Instance not found in Orthanc' })
+    } else {
+      res.status(503).json({ error: 'Orthanc unavailable', detail: err.message })
+    }
+  }
+})
+
+// ── Study instances (v1) — ordered list so the viewer can walk every image ─────
+app.get('/api/v1/studies/:studyId/instances', async (req, res) => {
+  try {
+    const { rows } = await pool.query<InstanceRow>(
+      'SELECT id, orthanc_instance_id, instance_number FROM studies WHERE orthanc_study_id = $1',
+      [req.params.studyId],
+    )
+    if (rows.length === 0) {
+      res.status(404).json({ error: 'Study not found' })
+      return
+    }
+    res.json(buildInstancesPayload(req.params.studyId, rows))
+  } catch (err: any) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ── Single instance DICOM file (v1) ────────────────────────────────────────────
+app.get('/api/v1/studies/:studyId/instances/:instanceId/file', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT 1 FROM studies WHERE orthanc_study_id = $1 AND orthanc_instance_id = $2 LIMIT 1',
+      [req.params.studyId, req.params.instanceId],
+    )
+    if (rows.length === 0) {
+      res.status(404).json({ error: 'Instance not found' })
+      return
+    }
+    const { data } = await axios.get<ArrayBuffer>(
+      `${ORTHANC_URL}/instances/${req.params.instanceId}/file`,
       { auth: orthancAuth, responseType: 'arraybuffer' },
     )
     res.setHeader('Content-Type', 'application/dicom')
