@@ -5,6 +5,8 @@ import axios from 'axios'
 import { pool, initDb } from './db'
 import { uploadStudy } from './upload'
 import { buildInstancesPayload, type InstanceRow } from './instances-util'
+import { assertEncryptionKeyConfigured } from './services/encryption.service'
+import { zenodoConfigRouter } from './routes/zenodo-config.routes'
 
 const app = express()
 const PORT = parseInt(process.env.PORT ?? '3000', 10)
@@ -238,7 +240,17 @@ app.get('/api/v1/studies/:studyId/thumbnail', async (req, res) => {
 // ── Legacy upload — delegates to uploadStudy so instances appear in the explorer ──
 app.post('/api/instances', upload.single('file'), uploadStudy)
 
+// ── Zenodo credentials configuration (ZEN-01) ─────────────────────────────────
+app.use('/api/v1/zenodo', zenodoConfigRouter)
+
 // ── Start ─────────────────────────────────────────────────────────────────────
+try {
+  assertEncryptionKeyConfigured()
+} catch (err: any) {
+  console.error(err.message)
+  process.exit(1)
+}
+
 initDb()
   .then(() => {
     app.listen(PORT, () => console.log(`MICD backend listening on port ${PORT}`))

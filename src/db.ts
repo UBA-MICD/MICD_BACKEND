@@ -35,5 +35,41 @@ export async function initDb(): Promise<void> {
     DROP INDEX IF EXISTS idx_studies_patient_name;
     CREATE INDEX IF NOT EXISTS idx_studies_patient_name_trgm ON studies USING gin (patient_name gin_trgm_ops);
     CREATE INDEX IF NOT EXISTS idx_studies_patient_id_trgm   ON studies USING gin (patient_id   gin_trgm_ops);
+
+    -- Minimal users table (TK-05 stopgap) — just enough for role checks and audit FKs
+    CREATE TABLE IF NOT EXISTS users (
+      id            SERIAL PRIMARY KEY,
+      email         TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      role          VARCHAR(20) NOT NULL DEFAULT 'user' CHECK (role IN ('admin', 'user')),
+      created_at    TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    -- Audit log (TK-06 stopgap)
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id          SERIAL PRIMARY KEY,
+      user_id     INTEGER REFERENCES users(id),
+      action      TEXT NOT NULL,
+      resource_id TEXT,
+      "timestamp" TIMESTAMPTZ DEFAULT NOW(),
+      ip          TEXT
+    );
+
+    -- ZEN-01: Zenodo credentials
+    DO $$ BEGIN
+      CREATE TYPE zenodo_environment AS ENUM ('sandbox', 'production');
+    EXCEPTION
+      WHEN duplicate_object THEN NULL;
+    END $$;
+
+    CREATE TABLE IF NOT EXISTS zenodo_config (
+      id              SERIAL PRIMARY KEY,
+      environment     zenodo_environment NOT NULL UNIQUE,
+      token_encrypted TEXT NOT NULL,
+      token_hint      VARCHAR(20) NOT NULL,
+      created_by      INTEGER REFERENCES users(id),
+      created_at      TIMESTAMPTZ DEFAULT NOW(),
+      updated_at      TIMESTAMPTZ DEFAULT NOW()
+    );
   `)
 }
