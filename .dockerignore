@@ -1,0 +1,19 @@
+node_modules/
+dist/
+.git/
+.DS_Store
+*.log
+npm-debug.log*
+.env
+.env.*
+!.env.example
+
+# Not needed inside the image
+docs/
+scripts/
+Makefile
+docker-compose.yml
+
+# Data samples are not needed in Docker builds
+.data.example/
+.data/
