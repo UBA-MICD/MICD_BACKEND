@@ -2,17 +2,26 @@
 import os
 import argparse
 import sys
+import random
+from datetime import datetime, timedelta
 from pathlib import Path
 import pydicom
 from pydicom.uid import generate_uid
 
-def mutate_dicom(dataset: pydicom.Dataset, patient_id: str, patient_name: str, study_uid_map: dict, series_uid_map: dict) -> pydicom.Dataset:
+def mutate_dicom(dataset: pydicom.Dataset, patient_id: str, patient_name: str, patient_sex: str, patient_age: str, study_date: str, study_uid_map: dict, series_uid_map: dict) -> pydicom.Dataset:
     """
     Mutates a DICOM dataset in-place to anonymize/synthesize it for a new patient.
     Guarantees unique UIDs while preserving original study/series relationships.
     """
     dataset.PatientID = patient_id
     dataset.PatientName = patient_name
+    dataset.PatientSex = patient_sex
+    dataset.PatientAge = patient_age
+
+    # Override date fields if they exist in the original dataset
+    for tag in ["StudyDate", "SeriesDate", "AcquisitionDate", "ContentDate"]:
+        if tag in dataset:
+            setattr(dataset, tag, study_date)
 
     # Update StudyInstanceUID while preserving study mapping for the patient
     orig_study_uid = dataset.get("StudyInstanceUID")
@@ -73,8 +82,6 @@ def main():
         print(f"Error: No se encontraron archivos DICOM válidos en '{input_path.resolve()}'", file=sys.stderr)
         sys.exit(1)
 
-    output_path.mkdir(parents=True, exist_ok=True)
-
     print(f"Encontrados {len(dicom_files)} archivos DICOM base.")
     print(f"Generando datos para {args.count} paciente(s)...")
 
@@ -83,16 +90,39 @@ def main():
         patient_id = f"SYN-{i:03d}"
         patient_name = f"Synthetic Patient {i}"
 
+        # Generate consistent metadata for this patient
+        patient_sex = random.choice(["M", "F", "O"])
+        patient_age = f"{random.randint(18, 90):03d}Y"
+
+        # Random date within the last 10 years
+        today = datetime.today()
+        days_ago = random.randint(0, 365 * 10)
+        random_date = today - timedelta(days=days_ago)
+        study_date = random_date.strftime("%Y%m%d")
+
+        # Patient subfolder
+        patient_output_dir = output_path / patient_id
+        patient_output_dir.mkdir(parents=True, exist_ok=True)
+
         study_uid_map = {}
         series_uid_map = {}
 
         for file_path in dicom_files:
             try:
                 ds = pydicom.dcmread(file_path)
-                mutated_ds = mutate_dicom(ds, patient_id, patient_name, study_uid_map, series_uid_map)
+                mutated_ds = mutate_dicom(
+                    ds,
+                    patient_id,
+                    patient_name,
+                    patient_sex,
+                    patient_age,
+                    study_date,
+                    study_uid_map,
+                    series_uid_map
+                )
 
                 out_filename = f"{patient_id}_{mutated_ds.SOPInstanceUID}.dcm"
-                out_filepath = output_path / out_filename
+                out_filepath = patient_output_dir / out_filename
 
                 mutated_ds.save_as(out_filepath)
                 generated_count += 1

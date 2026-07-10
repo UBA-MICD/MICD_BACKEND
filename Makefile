@@ -1,4 +1,4 @@
-.PHONY: help install hooks up down build logs ps restart check test pre-commit clean generate-fake-data test-python
+.PHONY: help install hooks up down build logs ps restart check test pre-commit clean clean-data generate-fake-data test-python
 
 # ── Default ───────────────────────────────────────────────────────────────────
 help:
@@ -17,7 +17,8 @@ help:
 	@echo "  make test        Run integration tests (requires stack up)"
 	@echo "  make check       Verify all services are running correctly"
 	@echo "  make generate-fake-data  Generate synthetic DICOM files for testing"
-	@echo "  make clean       Remove containers, volumes and images"
+	@echo "  make clean-data  Remove generated synthetic DICOM data"
+	@echo "  make clean       Remove containers, volumes, images and synthetic data"
 	@echo ""
 
 # ── Dependencies ──────────────────────────────────────────────────────────────
@@ -74,5 +75,10 @@ pre-commit:
 	fi
 
 # ── Cleanup ───────────────────────────────────────────────────────────────────
-clean:
+clean: clean-data
 	docker compose down -v --rmi local
+
+clean-data:
+	@echo "Removing synthetic data folder..."
+	@rm -rf ./data
+	@echo "Data cleaned."

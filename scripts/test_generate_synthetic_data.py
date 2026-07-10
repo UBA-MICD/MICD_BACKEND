@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 import pydicom
 from pydicom.dataset import Dataset, FileMetaDataset
-from pydicom.uid import ExplicitVRLittleEndian, generate_uid
+from pydicom.uid import ExplicitVRLittleEndian
 
 from generate_synthetic_data import mutate_dicom, find_dicom_files
 
@@ -27,13 +27,32 @@ class TestGenerateSyntheticData(unittest.TestCase):
         self.ds.SeriesInstanceUID = "1.2.3.4.5.6.original.series"
         self.ds.SOPInstanceUID = "1.2.3.4.5.6.original"
 
-    def test_mutate_dicom_changes_patient_info(self):
+        # Add mock dates to verify they get overwritten
+        self.ds.StudyDate = "20200101"
+        self.ds.SeriesDate = "20200101"
+
+    def test_mutate_dicom_changes_patient_info_and_metadata(self):
         study_map = {}
         series_map = {}
-        mutated = mutate_dicom(self.ds, "SYN-001", "Synthetic Patient 1", study_map, series_map)
+        mutated = mutate_dicom(
+            self.ds,
+            "SYN-001",
+            "Synthetic Patient 1",
+            "M",
+            "045Y",
+            "20260710",
+            study_map,
+            series_map
+        )
 
         self.assertEqual(mutated.PatientID, "SYN-001")
         self.assertEqual(mutated.PatientName, "Synthetic Patient 1")
+        self.assertEqual(mutated.PatientSex, "M")
+        self.assertEqual(mutated.PatientAge, "045Y")
+
+        # Verify dates are overwritten
+        self.assertEqual(mutated.StudyDate, "20260710")
+        self.assertEqual(mutated.SeriesDate, "20260710")
 
     def test_mutate_dicom_changes_uids(self):
         study_map = {}
@@ -44,7 +63,16 @@ class TestGenerateSyntheticData(unittest.TestCase):
         orig_sop = self.ds.SOPInstanceUID
         orig_meta_sop = self.ds.file_meta.MediaStorageSOPInstanceUID
 
-        mutated = mutate_dicom(self.ds, "SYN-001", "Synthetic Patient 1", study_map, series_map)
+        mutated = mutate_dicom(
+            self.ds,
+            "SYN-001",
+            "Synthetic Patient 1",
+            "F",
+            "030Y",
+            "20260710",
+            study_map,
+            series_map
+        )
 
         self.assertNotEqual(mutated.StudyInstanceUID, orig_study)
         self.assertNotEqual(mutated.SeriesInstanceUID, orig_series)
@@ -71,25 +99,20 @@ class TestGenerateSyntheticData(unittest.TestCase):
         ds2.SeriesInstanceUID = "series-xyz"
         ds2.SOPInstanceUID = "sop-2"
 
-        mut1 = mutate_dicom(ds1, "SYN-001", "Synthetic Patient 1", study_map, series_map)
-        mut2 = mutate_dicom(ds2, "SYN-001", "Synthetic Patient 1", study_map, series_map)
+        mut1 = mutate_dicom(ds1, "SYN-001", "Synthetic Patient 1", "O", "060Y", "20260710", study_map, series_map)
+        mut2 = mutate_dicom(ds2, "SYN-001", "Synthetic Patient 1", "O", "060Y", "20260710", study_map, series_map)
 
-        # The new study and series UIDs should match across files (since they shared the same originals)
         self.assertEqual(mut1.StudyInstanceUID, mut2.StudyInstanceUID)
         self.assertEqual(mut1.SeriesInstanceUID, mut2.SeriesInstanceUID)
-
-        # But their SOP Instance UIDs must be distinct
         self.assertNotEqual(mut1.SOPInstanceUID, mut2.SOPInstanceUID)
 
     def test_find_dicom_files_checks_magic_bytes(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tmpdir_path = Path(tmpdir)
 
-            # 1. Non-DICOM file (no header)
             non_dicom = tmpdir_path / "test.txt"
             non_dicom.write_text("just some text")
 
-            # 2. Valid DICOM file structure (128 bytes padding + 'DICM' magic bytes)
             dicom_file = tmpdir_path / "image.dcm"
             with open(dicom_file, "wb") as f:
                 f.write(b"\x00" * 128)
