@@ -23,18 +23,19 @@ Un stack web (SPA + API REST + PACS + DB) resuelve los tres problemas y es el mo
 
 ### Orthanc — servidor DICOM
 
-**¿Qué es?** Orthanc es un servidor PACS (*Picture Archiving and Communication System*) open-source, liviano y con API REST nativa.
+**¿Qué es?** Orthanc es un servidor PACS (_Picture Archiving and Communication System_) open-source, liviano y con API REST nativa.
 
 **¿Por qué Orthanc y no otra cosa?**
 
-| Alternativa    | Problema                                                          |
-|----------------|-------------------------------------------------------------------|
-| Filesystem     | No escala, no es multi-usuario, sin protocolo DICOM estándar      |
-| `dcm4chee`     | Muy pesado (Java EE), configuración compleja, over-engineering para el alcance del proyecto |
-| OHIF Viewer    | Es un *viewer*, no un servidor PACS; no resuelve el almacenamiento |
-| Orthanc ✓      | Liviano (C++), imagen Docker oficial, API REST out-of-the-box, soporta protocolo DICOM nativo, ampliamente usado en proyectos académicos y hospitalarios open-source |
+| Alternativa | Problema                                                                                                                                                             |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Filesystem  | No escala, no es multi-usuario, sin protocolo DICOM estándar                                                                                                         |
+| `dcm4chee`  | Muy pesado (Java EE), configuración compleja, over-engineering para el alcance del proyecto                                                                          |
+| OHIF Viewer | Es un _viewer_, no un servidor PACS; no resuelve el almacenamiento                                                                                                   |
+| Orthanc ✓   | Liviano (C++), imagen Docker oficial, API REST out-of-the-box, soporta protocolo DICOM nativo, ampliamente usado en proyectos académicos y hospitalarios open-source |
 
 **¿Qué aporta al stack?**
+
 - Centraliza el almacenamiento de estudios DICOM en el servidor
 - Expone una API REST que el backend consulta para listar, buscar y recuperar estudios
 - Soporta C-STORE y C-FIND: equipos médicos reales (tomógrafos, resonadores) pueden "empujar" estudios directamente
@@ -49,9 +50,9 @@ No fue una elección arbitraria de implementación: es la tecnología acordada c
 
 **Orthanc vs pydicom — cuándo usar cada uno**
 
-| Herramienta | Cuándo usarla |
-|-------------|---------------|
-| **Orthanc** | Almacenamiento, búsqueda y recuperación de estudios vía API REST o protocolo DICOM (C-STORE, C-FIND). Es el servidor central que recibe estudios desde el Hospital. |
+| Herramienta | Cuándo usarla                                                                                                                                                                                                                              |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Orthanc** | Almacenamiento, búsqueda y recuperación de estudios vía API REST o protocolo DICOM (C-STORE, C-FIND). Es el servidor central que recibe estudios desde el Hospital.                                                                        |
 | **pydicom** | Procesamiento Python de archivos `.dcm` individuales: leer/modificar tags, anonimizar metadatos, validar conformidad DICOM antes de enviar a Orthanc. Se usaría en un worker de procesamiento o script de anonimización, no como servidor. |
 
 En la arquitectura actual, Orthanc cubre el rol de servidor PACS. pydicom entraría si se implementa el módulo de **anonimización automática** (sección 4.1 del Trabajo Profesional: "Procesamiento automático de imágenes DICOM para eliminar información de identificación personal previo a cualquier transmisión") — ese procesamiento ocurriría en el backend antes de hacer C-STORE a Orthanc.
@@ -78,11 +79,11 @@ TypeScript ya era el lenguaje del proyecto, por lo que mantener Node.js en el ba
 
 ## Servicios
 
-| Servicio   | Imagen base              | Puerto por defecto | Descripción                          |
-|------------|--------------------------|-------------------|--------------------------------------|
-| `postgres` | `postgres:16-alpine`     | 5432              | Base de datos relacional             |
-| `orthanc`  | `orthancteam/orthanc`    | 8042 (HTTP), 4242 (DICOM) | Servidor DICOM PACS          |
-| `backend`  | `node:20-alpine` (slim)  | 3000              | API REST Express/TypeScript          |
+| Servicio   | Imagen base             | Puerto por defecto        | Descripción                 |
+| ---------- | ----------------------- | ------------------------- | --------------------------- |
+| `postgres` | `postgres:16-alpine`    | 5432                      | Base de datos relacional    |
+| `orthanc`  | `orthancteam/orthanc`   | 8042 (HTTP), 4242 (DICOM) | Servidor DICOM PACS         |
+| `backend`  | `node:20-alpine` (slim) | 3000                      | API REST Express/TypeScript |
 
 El servicio `frontend` (Nginx :80) se levanta desde el repo [MICD_WEB](https://github.com/UBA-MICD/MICD_WEB) y se une a la red `micd` de este stack.
 
@@ -115,25 +116,25 @@ cp .env.example .env
 docker compose up --build
 ```
 
-La primera vez tarda ~2–3 minutos mientras se construyen las imágenes.  
+La primera vez tarda ~2–3 minutos mientras se construyen las imágenes.
 Las siguientes veces, sin cambios en código, levanta en segundos.
 
 ## Variables de entorno
 
-Todas las variables tienen valores por defecto funcionales para desarrollo local.  
+Todas las variables tienen valores por defecto funcionales para desarrollo local.
 Editar `.env` antes de correr en producción.
 
-| Variable             | Default    | Descripción                                               |
-|----------------------|------------|-----------------------------------------------------------|
-| `DB_NAME`            | `micd`     | Nombre de la base de datos PostgreSQL                     |
-| `DB_USER`            | `micd`     | Usuario de PostgreSQL                                     |
-| `DB_PASSWORD`        | `micd`     | Contraseña de PostgreSQL                                  |
-| `DB_PORT`            | `5432`     | Puerto del host mapeado al contenedor de Postgres         |
-| `ORTHANC_USERNAME`   | `orthanc`  | Usuario para la API REST de Orthanc                       |
-| `ORTHANC_PASSWORD`   | `orthanc`  | Contraseña para la API REST de Orthanc                    |
-| `ORTHANC_HTTP_PORT`  | `8042`     | Puerto del host para la interfaz web y REST de Orthanc    |
-| `ORTHANC_DICOM_PORT` | `4242`     | Puerto del host para DICOM C-STORE / C-FIND               |
-| `BACKEND_PORT`       | `3000`     | Puerto del host expuesto por el backend Node.js           |
+| Variable             | Default   | Descripción                                            |
+| -------------------- | --------- | ------------------------------------------------------ |
+| `DB_NAME`            | `micd`    | Nombre de la base de datos PostgreSQL                  |
+| `DB_USER`            | `micd`    | Usuario de PostgreSQL                                  |
+| `DB_PASSWORD`        | `micd`    | Contraseña de PostgreSQL                               |
+| `DB_PORT`            | `5432`    | Puerto del host mapeado al contenedor de Postgres      |
+| `ORTHANC_USERNAME`   | `orthanc` | Usuario para la API REST de Orthanc                    |
+| `ORTHANC_PASSWORD`   | `orthanc` | Contraseña para la API REST de Orthanc                 |
+| `ORTHANC_HTTP_PORT`  | `8042`    | Puerto del host para la interfaz web y REST de Orthanc |
+| `ORTHANC_DICOM_PORT` | `4242`    | Puerto del host para DICOM C-STORE / C-FIND            |
+| `BACKEND_PORT`       | `3000`    | Puerto del host expuesto por el backend Node.js        |
 
 ### Conflicto de puertos
 
@@ -151,9 +152,9 @@ BACKEND_PORT=3001
 
 Los datos sobreviven a reinicios y a `docker compose down` gracias a volúmenes nombrados:
 
-| Volumen         | Contenido                          |
-|-----------------|------------------------------------|
-| `postgres-data` | Datos de PostgreSQL                |
+| Volumen         | Contenido                             |
+| --------------- | ------------------------------------- |
+| `postgres-data` | Datos de PostgreSQL                   |
 | `orthanc-data`  | Estudios DICOM almacenados en Orthanc |
 
 Para **eliminar** los datos (reset completo):
@@ -190,12 +191,12 @@ psql -h localhost -p 5432 -U micd -d micd
 
 ## Endpoints disponibles tras levantar
 
-| URL                                   | Descripción                                  |
-|---------------------------------------|----------------------------------------------|
-| `http://localhost:3000/api/health`    | Healthcheck del backend (estado de DB y Orthanc) |
-| `http://localhost:3000/api/studies`   | Lista de estudios DICOM vía Orthanc          |
-| `http://localhost:8042`               | Interfaz web de Orthanc                      |
-| `http://localhost`                    | SPA (si el stack de MICD_WEB está levantado) |
+| URL                                 | Descripción                                      |
+| ----------------------------------- | ------------------------------------------------ |
+| `http://localhost:3000/api/health`  | Healthcheck del backend (estado de DB y Orthanc) |
+| `http://localhost:3000/api/studies` | Lista de estudios DICOM vía Orthanc              |
+| `http://localhost:8042`             | Interfaz web de Orthanc                          |
+| `http://localhost`                  | SPA (si el stack de MICD_WEB está levantado)     |
 
 ## Arquitectura de red
 
@@ -244,11 +245,11 @@ Orthanc (:8042)
 
 **Lo que el frontend llama y a qué Orthanc corresponde:**
 
-| Call del frontend | El backend proxea a Orthanc |
-|-------------------|-----------------------------|
-| `GET /api/studies` | `GET http://orthanc:8042/studies` |
-| `GET /api/studies/:id` | `GET http://orthanc:8042/studies/:id` |
-| `GET /api/health` | `GET http://orthanc:8042/system` (+ `SELECT 1` en Postgres) |
+| Call del frontend      | El backend proxea a Orthanc                                 |
+| ---------------------- | ----------------------------------------------------------- |
+| `GET /api/studies`     | `GET http://orthanc:8042/studies`                           |
+| `GET /api/studies/:id` | `GET http://orthanc:8042/studies/:id`                       |
+| `GET /api/health`      | `GET http://orthanc:8042/system` (+ `SELECT 1` en Postgres) |
 
 El puerto `8042` de Orthanc queda expuesto al host solo para uso en desarrollo (web UI, curl). La SPA nunca lo usa.
 
