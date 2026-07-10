@@ -1,4 +1,4 @@
-.PHONY: help install hooks up down build logs ps restart check test pre-commit clean clean-data generate-fake-data test-python
+.PHONY: help install hooks up down build logs ps restart check test pre-commit clean clean-data generate-fake-data test-python seed
 
 # ── Default ───────────────────────────────────────────────────────────────────
 help:
@@ -7,7 +7,7 @@ help:
 	@echo ""
 	@echo "  make install     Install dependencies and create .env"
 	@echo "  make hooks       Install pre-commit Git hooks"
-	@echo "  make up          Start the Docker stack (postgres + orthanc + backend)"
+	@echo "  make up          Start the Docker stack (postgres + orthanc + backend) and seed data"
 	@echo "  make down        Stop and remove containers"
 	@echo "  make build       Rebuild all Docker images"
 	@echo "  make logs        Follow logs from all services"
@@ -16,7 +16,8 @@ help:
 	@echo "  make pre-commit  Run pre-commit checks manually"
 	@echo "  make test        Run integration tests (requires stack up)"
 	@echo "  make check       Verify all services are running correctly"
-	@echo "  make generate-fake-data  Generate synthetic DICOM files for testing"
+	@echo "  make generate-fake-data  Generate synthetic and volumetric DICOM files for testing"
+	@echo "  make seed        Wait for backend and seed all staging DICOM data"
 	@echo "  make clean-data  Remove generated synthetic DICOM data"
 	@echo "  make clean       Remove containers, volumes, images and synthetic data"
 	@echo ""
@@ -65,6 +66,10 @@ test-python:
 
 generate-fake-data:
 	uv run --with pydicom python3 scripts/generate_synthetic_data.py --input ./.data.example --output ./data/staging/dicom --count 5
+	uv run --with pydicom --with numpy python3 scripts/generate_volumetric_data.py
+
+seed:
+	docker compose --profile seed up micd-seeder
 
 pre-commit:
 	@if command -v pre-commit >/dev/null 2>&1; then \

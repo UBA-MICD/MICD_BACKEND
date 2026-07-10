@@ -76,6 +76,26 @@ services:
       timeout: 5s
       retries: 5
 
+  # ── Seeder (TypeScript runner) ──────────────────────────────────────────────
+  micd-seeder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    container_name: micd-seeder
+    profiles:
+      - seed
+    environment:
+      API_HEALTH_URL: http://micd-backend:3000/api/health
+      UPLOAD_URL: http://micd-backend:3000/api/v1/studies/upload
+      STAGING_DIR: /app/data/staging/dicom
+    volumes:
+      - ./data/staging/dicom:/app/data/staging/dicom
+      - ./scripts:/app/scripts
+    depends_on:
+      - backend
+    entrypoint: ["npx", "ts-node", "scripts/seed_api.ts"]
+
 volumes:
   postgres-data:
   orthanc-data:
