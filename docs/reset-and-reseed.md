@@ -45,6 +45,7 @@ done
 ```
 
 Códigos esperados:
+
 - `201` — subido correctamente
 - `409` — duplicado (ya existe, omitir o usar `?force=true`)
 - `400` — archivo inválido (no es DICOM)

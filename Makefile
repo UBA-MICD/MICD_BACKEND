@@ -1,4 +1,4 @@
-.PHONY: help install hooks up down build logs ps restart check test pre-commit clean clean-data generate-fake-data test-python seed
+.PHONY: help install hooks up down build logs ps restart check test pre-commit clean clean-data clean-python generate-fake-data test-python seed
 
 # ── Default ───────────────────────────────────────────────────────────────────
 help:
@@ -19,13 +19,15 @@ help:
 	@echo "  make generate-fake-data  Generate synthetic and volumetric DICOM files for testing"
 	@echo "  make seed        Wait for backend and seed all staging DICOM data"
 	@echo "  make clean-data  Remove generated synthetic DICOM data"
-	@echo "  make clean       Remove containers, volumes, images and synthetic data"
+	@echo "  make clean-python Remove Python cache and pyc files"
+	@echo "  make clean       Remove containers, volumes, images, synthetic data and Python caches"
 	@echo ""
 
 # ── Dependencies ──────────────────────────────────────────────────────────────
 install:
 	npm install
 	@[ -f .env ] || (cp .env.example .env && echo ".env created from .env.example")
+	uv run --with pydicom --with requests --with numpy python3 -c "print('Python dependencies cached.')"
 
 hooks:
 	@if command -v pre-commit >/dev/null 2>&1; then \
@@ -69,7 +71,7 @@ generate-fake-data:
 	uv run --with pydicom --with numpy python3 scripts/generate_volumetric_data.py
 
 seed:
-	docker compose --profile seed up micd-seeder
+	docker compose --profile seed run --rm micd-seeder
 
 pre-commit:
 	@if command -v pre-commit >/dev/null 2>&1; then \
@@ -80,10 +82,18 @@ pre-commit:
 	fi
 
 # ── Cleanup ───────────────────────────────────────────────────────────────────
-clean: clean-data
+clean: clean-data clean-python
 	docker compose down -v --rmi local
 
 clean-data:
 	@echo "Removing synthetic data folder..."
 	@rm -rf ./data
 	@echo "Data cleaned."
+
+clean-python:
+	@echo "Cleaning Python cache files..."
+	@find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+	@find . -type f -name "*.pyc" -delete 2>/dev/null || true
+	@rm -rf .pytest_cache
+	@uv cache clean
+	@echo "Python cache cleaned."

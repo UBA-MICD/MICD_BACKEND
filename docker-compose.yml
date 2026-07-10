@@ -85,6 +85,8 @@ services:
     container_name: micd-seeder
     profiles:
       - seed
+    env_file:
+      - .env
     environment:
       API_HEALTH_URL: http://micd-backend:3000/api/health
       UPLOAD_URL: http://micd-backend:3000/api/v1/studies/upload

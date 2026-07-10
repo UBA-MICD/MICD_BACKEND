@@ -1,10 +1,20 @@
 #!/usr/bin/env bash
 set -e
 
+# Load environment variables from .env if present
+if [ -f .env ]; then
+  # shellcheck disable=SC2046
+  export $(grep -v '^#' .env | xargs)
+fi
+
+PORT_TO_USE=${PORT:-${BACKEND_PORT:-3000}}
+ORTHANC_PORT_TO_USE=${ORTHANC_PORT:-${ORTHANC_HTTP_PORT:-8042}}
+ORTHANC_USER_TO_USE=${ORTHANC_USER:-${ORTHANC_USERNAME:-orthanc}}
+ORTHANC_PASS_TO_USE=${ORTHANC_PASSWORD:-orthanc}
+
 CYAN='\033[0;36m'
 GREEN='\033[0;32m'
 RED='\033[0;31m'
-YELLOW='\033[1;33m'
 NC='\033[0m'
 
 ok()   { echo -e "  ${GREEN}✔${NC} $1"; }
@@ -40,7 +50,7 @@ echo ""
 # ── Backend health ────────────────────────────────────────────────────────────
 info "Backend"
 
-HEALTH=$(curl -sf http://localhost:3000/api/health 2>/dev/null || echo "")
+HEALTH=$(curl -sf http://localhost:"${PORT_TO_USE}"/api/health 2>/dev/null || echo "")
 if echo "$HEALTH" | grep -q '"status":"ok"'; then
   ORTHANC_VER=$(echo "$HEALTH" | python3 -c "import sys,json; print(json.load(sys.stdin).get('orthanc','?'))" 2>/dev/null)
   ok "GET /api/health → ok (Orthanc $ORTHANC_VER)"
@@ -48,7 +58,7 @@ else
   fail "GET /api/health → not reachable or degraded"
 fi
 
-STUDIES=$(curl -sf http://localhost:3000/api/studies 2>/dev/null || echo "")
+STUDIES=$(curl -sf http://localhost:"${PORT_TO_USE}"/api/studies 2>/dev/null || echo "")
 if echo "$STUDIES" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null; then
   COUNT=$(echo "$STUDIES" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null)
   ok "GET /api/studies → $COUNT study/studies in Orthanc"
@@ -58,14 +68,22 @@ fi
 
 echo ""
 
-# ── Orthanc auth ──────────────────────────────────────────────────────────────
+# ── Orthanc auth and metrics ──────────────────────────────────────────────────
 info "Orthanc"
 
-STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8042/studies 2>/dev/null)
+STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:"${ORTHANC_PORT_TO_USE}"/studies 2>/dev/null)
 if [ "$STATUS" = "401" ]; then
   ok "Unauthenticated request → 401 Unauthorized"
 else
   fail "Unauthenticated request → expected 401, got $STATUS"
+fi
+
+INSTANCES_JSON=$(curl -sf -u "${ORTHANC_USER_TO_USE}:${ORTHANC_PASS_TO_USE}" http://localhost:"${ORTHANC_PORT_TO_USE}"/instances 2>/dev/null || echo "")
+if [ -n "$INSTANCES_JSON" ]; then
+  INSTANCES_COUNT=$(echo "$INSTANCES_JSON" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
+  ok "Orthanc connection → $INSTANCES_COUNT DICOM instance(s) stored"
+else
+  fail "Orthanc connection → Failed to fetch instances count"
 fi
 
 echo ""

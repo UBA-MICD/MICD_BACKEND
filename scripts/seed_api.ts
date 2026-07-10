@@ -1,10 +1,14 @@
+import "dotenv/config";
 import fs from "fs";
 import path from "path";
 
-const HEALTH_URL =
-  process.env.API_HEALTH_URL || "http://micd-backend:3000/api/health";
+const BACKEND_HOST = process.env.BACKEND_HOST || "micd-backend";
+const PORT = process.env.PORT || process.env.BACKEND_PORT || "3000";
+const API_BASE_URL = `http://${BACKEND_HOST}:${PORT}`;
+
+const HEALTH_URL = process.env.API_HEALTH_URL || `${API_BASE_URL}/api/health`;
 const UPLOAD_URL =
-  process.env.UPLOAD_URL || "http://micd-backend:3000/api/v1/studies/upload";
+  process.env.UPLOAD_URL || `${API_BASE_URL}/api/v1/studies/upload`;
 const STAGING_DIR = process.env.STAGING_DIR || "./data/staging/dicom";
 
 function getDicomFiles(dir: string): string[] {
@@ -39,7 +43,7 @@ async function waitForBackend(
           return true;
         } else {
           console.log(
-            `Backend degraded: ${data.error || "Unknown error"} - retrying...`,
+            `Backend available but degraded: ${data.error || "no details"}`,
           );
         }
       }
@@ -48,14 +52,14 @@ async function waitForBackend(
     }
     await new Promise((resolve) => setTimeout(resolve, delayMs));
   }
-  console.error("Error: Backend not ready after retries.");
+  console.error("Error: Backend is not ready.");
   return false;
 }
 
 async function seedData(dir: string, uploadUrl: string): Promise<boolean> {
   const files = getDicomFiles(dir);
   if (files.length === 0) {
-    console.log("DICOM files not found in staging directory. Skipping upload.");
+    console.log("No DICOM files found to upload.");
     return true;
   }
 
@@ -106,6 +110,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error("Fatal error in seeding:", err);
+  console.error("Fatal error on seeding:", err);
   process.exit(1);
 });

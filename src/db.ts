@@ -1,12 +1,12 @@
-import { Pool } from 'pg'
+import { Pool } from "pg";
 
 export const pool = new Pool({
-  host: process.env.DB_HOST ?? 'postgres',
-  port: parseInt(process.env.DB_PORT ?? '5432', 10),
-  database: process.env.DB_NAME ?? 'micd',
-  user: process.env.DB_USER ?? 'micd',
-  password: process.env.DB_PASSWORD ?? 'micd',
-})
+  host: process.env.DB_HOST ?? "postgres",
+  port: parseInt(process.env.DB_PORT ?? "5432", 10),
+  database: process.env.DB_NAME ?? "micd",
+  user: process.env.DB_USER ?? "micd",
+  password: process.env.DB_PASSWORD ?? "micd",
+});
 
 export async function initDb(): Promise<void> {
   await pool.query(`
@@ -35,5 +35,5 @@ export async function initDb(): Promise<void> {
     DROP INDEX IF EXISTS idx_studies_patient_name;
     CREATE INDEX IF NOT EXISTS idx_studies_patient_name_trgm ON studies USING gin (patient_name gin_trgm_ops);
     CREATE INDEX IF NOT EXISTS idx_studies_patient_id_trgm   ON studies USING gin (patient_id   gin_trgm_ops);
-  `)
+  `);
 }

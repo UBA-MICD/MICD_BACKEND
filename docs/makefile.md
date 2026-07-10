@@ -2,18 +2,18 @@
 
 ## Referencia rápida
 
-| Comando | Descripción |
-|---|---|
-| `make install` | Instala dependencias y crea `.env` |
-| `make up` | Levanta el stack (postgres + orthanc + backend) en segundo plano |
-| `make down` | Detiene y elimina los contenedores |
-| `make build` | Reconstruye todas las imágenes Docker |
-| `make restart` | `build` + `up` en un solo paso |
-| `make check` | Verifica que todos los servicios estén funcionando |
-| `make test` | Corre los tests de integración |
-| `make logs` | Sigue los logs de todos los servicios |
-| `make ps` | Muestra el estado de los contenedores |
-| `make clean` | Elimina contenedores, volúmenes e imágenes locales |
+| Comando        | Descripción                                                      |
+| -------------- | ---------------------------------------------------------------- |
+| `make install` | Instala dependencias y crea `.env`                               |
+| `make up`      | Levanta el stack (postgres + orthanc + backend) en segundo plano |
+| `make down`    | Detiene y elimina los contenedores                               |
+| `make build`   | Reconstruye todas las imágenes Docker                            |
+| `make restart` | `build` + `up` en un solo paso                                   |
+| `make check`   | Verifica que todos los servicios estén funcionando               |
+| `make test`    | Corre los tests de integración                                   |
+| `make logs`    | Sigue los logs de todos los servicios                            |
+| `make ps`      | Muestra el estado de los contenedores                            |
+| `make clean`   | Elimina contenedores, volúmenes e imágenes locales               |
 
 ---
 
@@ -30,6 +30,7 @@ make check     # verifica que todo esté ok
 ## Flujo de desarrollo
 
 ### Cambios en el backend
+
 ```bash
 make build     # reconstruye la imagen del backend
 make up        # reinicia el contenedor con la nueva imagen
@@ -37,11 +38,13 @@ make check     # verifica
 ```
 
 ### Solo ver qué está corriendo
+
 ```bash
 make ps
 ```
 
 ### Ver logs en tiempo real
+
 ```bash
 make logs
 
@@ -61,6 +64,7 @@ Ejecuta `scripts/check.sh` y verifica:
 3. **Orthanc** — acceso sin credenciales retorna `401 Unauthorized`
 
 Ejemplo de salida exitosa:
+
 ```
 ▶ Checking MICD backend stack...
 
