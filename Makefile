@@ -1,4 +1,4 @@
-.PHONY: help install hooks up down build logs ps restart check test pre-commit clean
+.PHONY: help install hooks up down build logs ps restart check test pre-commit clean generate-fake-data test-python
 
 # ── Default ───────────────────────────────────────────────────────────────────
 help:
@@ -16,6 +16,7 @@ help:
 	@echo "  make pre-commit  Run pre-commit checks manually"
 	@echo "  make test        Run integration tests (requires stack up)"
 	@echo "  make check       Verify all services are running correctly"
+	@echo "  make generate-fake-data  Generate synthetic DICOM files for testing"
 	@echo "  make clean       Remove containers, volumes and images"
 	@echo ""
 
@@ -57,6 +58,12 @@ check:
 
 test:
 	npm run test:integration
+
+test-python:
+	uv run --with pydicom python3 scripts/test_generate_synthetic_data.py
+
+generate-fake-data:
+	uv run --with pydicom python3 scripts/generate_synthetic_data.py --input ./.data.example --output ./data/staging/dicom --count 5
 
 pre-commit:
 	@if command -v pre-commit >/dev/null 2>&1; then \
