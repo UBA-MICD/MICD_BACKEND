@@ -1,146 +1,105 @@
-# Reset y re-carga de estudios
+# Guía: Reset y Re-carga de Datos de Prueba
 
-Seguir estos pasos cada vez que haya que limpiar la base de datos y volver a subir archivos DICOM desde cero (por ejemplo, después de corregir la extracción de tags).
+Esta guía explica el flujo y los mecanismos para limpiar, regenerar y re-ingestar datos médicos en formato DICOM dentro de la base de datos de PostgreSQL y el PACS de Orthanc.
 
 ---
 
-## 1. Borrar todos los estudios
+## 1. Comportamiento y Garantía de Idempotencia
 
-### 1a. Limpiar la tabla de estudios en PostgreSQL
+El backend de MICD está diseñado para que el proceso de ingesta sea estrictamente **idempotente**. Si un cliente o el proceso de seeding envía un archivo DICOM que ya ha sido procesado previamente, el sistema reacciona de la siguiente forma:
+
+### PACS (Orthanc)
+
+Orthanc detecta si la instancia ya está guardada basándose en su hash interno. Si ya existe, descarta la subida y responde con un código de estado informando que la instancia ya estaba almacenada.
+
+### Base de Datos (PostgreSQL)
+
+Para evitar registros huérfanos o duplicados a nivel relacional, la tabla `studies` cuenta con una restricción única (`UNIQUE`) sobre la columna `sop_instance_uid` (identificador único a nivel de archivo/corte).
+
+Cuando se realiza un `INSERT`, el backend utiliza la sintaxis **`ON CONFLICT (sop_instance_uid) DO UPDATE`**.
+Esto garantiza que:
+
+- No se registren filas duplicadas en la base de datos.
+- Si los metadatos han cambiado o es necesario refrescarlos, se sobrescriben de forma segura con la versión más reciente (`EXCLUDED`).
+- Se actualiza la marca de tiempo de subida (`uploaded_at = NOW()`).
+
+### Ingesta Forzada (`?force=true`)
+
+Cuando el seeder o un cliente quiere sobrescribir deliberadamente los registros de metadatos, se puede invocar la API agregando el parámetro `?force=true`. Esto ejecutará una eliminación previa (`DELETE FROM studies WHERE sop_instance_uid = ...`) garantizando una inserción limpia sin violar restricciones de integridad.
+
+---
+
+## 2. Flujo Automatizado Moderno (Recomendado)
+
+Si necesitas vaciar por completo el sistema y arrancar de cero con un set de datos limpio de prueba:
+
+### Paso A: Limpiar y Apagar todo
+
+Ejecuta el target de limpieza general para apagar los contenedores Docker, eliminar sus volúmenes asociados (Postgres y Orthanc) y remover toda la data física temporal en staging:
+
+```bash
+make clean
+```
+
+### Paso B: Generar Data Sintética Limpia
+
+Genera 5 pacientes 2D estructurados en subcarpetas e inyecta un volumen 3D sintético de 64 cortes en `./data/staging/dicom/`:
+
+```bash
+make generate-fake-data
+```
+
+### Paso C: Levantar el Entorno y Sembrar (Seeding)
+
+Levanta la infraestructura local:
+
+```bash
+make up
+```
+
+Una vez que el backend esté arriba, inyecta la data recién generada mediante el contenedor de seeding:
+
+```bash
+make seed
+```
+
+---
+
+## 3. Flujo Manual Alternativo
+
+Si deseas hacer un vaciado fino sin detener los contenedores de Docker ni eliminar los volúmenes, puedes hacerlo mediante queries y llamadas directas.
+
+### Paso 1: Vaciar PostgreSQL manualmente
 
 ```bash
 docker exec -it micd-postgres \
   psql -U micd -d micd -c "TRUNCATE TABLE studies RESTART IDENTITY;"
 ```
 
-### 1b. Borrar todos los estudios en Orthanc
+### Paso 2: Vaciar Orthanc manualmente
 
 ```bash
-for id in $(curl -s http://localhost:8042/studies -u orthanc:orthanc | python3 -c "import sys,json; [print(x) for x in json.load(sys.stdin)]"); do
-  curl -s -X DELETE "http://localhost:8042/studies/$id" -u orthanc:orthanc
-  echo "Deleted $id"
+for id in $(curl -s -u orthanc:orthanc http://localhost:8042/studies | python3 -c "import sys,json; [print(x) for x in json.load(sys.stdin)]"); do
+  curl -s -X DELETE -u orthanc:orthanc "http://localhost:8042/studies/$id"
+  echo "Deleted study: $id"
 done
 ```
 
-Verificar que quedó vacío:
+### Paso 3: Cargar Archivos DICOM del Host
+
+Si deseas subir archivos DICOM locales en bloque desde la consola del host:
 
 ```bash
-curl -s http://localhost:3000/api/v1/studies | python3 -m json.tool
-# Esperado: { "studies": [], "total": 0, ... }
-```
-
----
-
-## 2. Volver a subir los archivos DICOM
-
-### Opción A — Carpeta con archivos reales
-
-```bash
-for f in /ruta/a/tus/dicoms/*.dcm; do
+for f in ./data/staging/dicom/**/*.dcm; do
   status=$(curl -s -o /dev/null -w "%{http_code}" \
     -X POST http://localhost:3000/api/v1/studies/upload \
     -F "file=@$f")
-  echo "$status  $f"
+  echo "Status: $status | File: $(basename "$f")"
 done
 ```
 
-Códigos esperados:
+_Códigos HTTP esperados:_
 
-- `201` — subido correctamente
-- `409` — duplicado (ya existe, omitir o usar `?force=true`)
-- `400` — archivo inválido (no es DICOM)
-
-### Opción B — Desde la UI
-
-1. Abrir `http://localhost`
-2. Click en **"Cargar carpeta"** en el panel izquierdo
-3. Seleccionar la carpeta con los `.dcm`
-4. Esperar que el panel derecho se actualice automáticamente
-
-### Opción C — Archivos de prueba sintéticos (sin DICOM reales)
-
-Genera 5 estudios con datos reales para testear los filtros:
-
-```bash
-node - <<'EOF'
-const fs = require('fs'), crypto = require('crypto');
-const uid = () => '2.25.' + BigInt('0x'+crypto.randomBytes(16).toString('hex')).toString().slice(0,38);
-const LONG = new Set(['OB','OD','OF','OL','OW','SQ','UC','UN','UR','UT']);
-function tag(g, e, vr, v) {
-  let val = vr==='US' ? (b=Buffer.alloc(2),b.writeUInt16LE(v,0),b)
-          : vr==='UL' ? (b=Buffer.alloc(4),b.writeUInt32LE(v,0),b)
-          : (vr==='OB'||vr==='OW') ? v
-          : Buffer.from(v+(v.length%2?(vr==='UI'?'\0':' '):''),'latin1');
-  const long = LONG.has(vr), h = Buffer.alloc(long?12:8);
-  h.writeUInt16LE(g,0); h.writeUInt16LE(e,2);
-  Buffer.from(vr).copy(h,4);
-  long ? (h.writeUInt16LE(0,6), h.writeUInt32LE(val.length,8))
-       : h.writeUInt16LE(val.length,6);
-  return Buffer.concat([h,val]);
-}
-function make(name, pid, mod, date, desc) {
-  const sop=uid(), study=uid(), series=uid(), cls='1.2.840.10008.5.1.4.1.1.2', ts='1.2.840.10008.1.2.1';
-  const meta = Buffer.concat([tag(2,1,'OB',Buffer.from([0,1])),tag(2,2,'UI',cls),tag(2,3,'UI',sop),tag(2,16,'UI',ts)]);
-  const pix  = Buffer.alloc(32,0); pix.writeUInt16LE(1024,0);
-  const ds   = Buffer.concat([
-    tag(8,22,'UI',cls),tag(8,24,'UI',sop),tag(8,32,'DA',date),tag(8,33,'DA',date),
-    tag(8,96,'CS',mod),tag(8,4158,'LO',desc),tag(8,4144,'LO',desc),
-    tag(16,16,'PN',name),tag(16,32,'LO',pid),
-    tag(32,13,'UI',study),tag(32,14,'UI',series),tag(32,19,'IS','1'),
-    tag(40,2,'US',1),tag(40,4,'CS','MONOCHROME2'),tag(40,16,'US',4),tag(40,17,'US',4),
-    tag(40,256,'US',16),tag(40,257,'US',16),tag(40,258,'US',15),tag(40,259,'US',0),
-    tag(0x7FE0,16,'OW',pix),
-  ]);
-  const ml = tag(2,0,'UL',meta.length);
-  return Buffer.concat([Buffer.alloc(128,0),Buffer.from('DICM'),ml,meta,ds]);
-}
-fs.mkdirSync('/tmp/test-dicoms',{recursive:true});
-[
-  ['Garcia^Juan','P001','CT','20240315','Torax con contraste'],
-  ['Lopez^Maria','P002','MR','20240520','Cerebro FLAIR'],
-  ['Perez^Carlos','P003','CR','20230810','Rx Torax PA'],
-  ['Gomez^Ana','P004','CT','20241201','Abdomen sin contraste'],
-  ['Torres^Luis','P005','MR','20240710','Columna lumbar'],
-].forEach(([n,p,m,d,desc]) => {
-  const path=`/tmp/test-dicoms/${p}_${m}.dcm`;
-  fs.writeFileSync(path, make(n,p,m,d,desc));
-  console.log('Created', path);
-});
-EOF
-```
-
-Luego subir:
-
-```bash
-for f in /tmp/test-dicoms/*.dcm; do
-  result=$(curl -s -X POST http://localhost:3000/api/v1/studies/upload -F "file=@$f")
-  echo "$f → $(echo $result | python3 -c 'import sys,json; s=json.load(sys.stdin).get("study",{}); print(s.get("patient_name","ERR"), s.get("modality","?"))' 2>/dev/null)"
-done
-```
-
----
-
-## 3. Verificar
-
-```bash
-curl -s http://localhost:3000/api/v1/studies | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-print(f'Total estudios: {d[\"total\"]}')
-for s in d['studies']:
-    print(f'  {s[\"patient_name\"]:20} {s[\"modality\"]:4} {s[\"study_date\"]}')
-"
-```
-
-Salida esperada (con archivos de prueba):
-
-```
-Total estudios: 5
-  Torres^Luis          MR   20240710
-  Gomez^Ana            CT   20241201
-  Perez^Carlos         CR   20230810
-  Lopez^Maria          MR   20240520
-  Garcia^Juan          CT   20240315
-```
-
-Después abrir `http://localhost` — el explorador del panel derecho debe mostrar los 5 estudios con nombre, modalidad, fecha y badge correctos.
+- `201 Created` — subido e indexado correctamente.
+- `409 Conflict` — duplicado detectado (ya existe en Postgres/Orthanc, no se modifica).
+- `400 Bad Request` — el archivo carece de preámbulo DICOM válido.
