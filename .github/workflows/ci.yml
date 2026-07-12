@@ -33,7 +33,7 @@ jobs:
           ORTHANC__AUTHENTICATION_ENABLED: "true"
           ORTHANC__REGISTERED_USERS: '{"orthanc": "orthanc"}'
         options: >-
-          --health-cmd "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8042/system', timeout=3)\" || exit 1"
+          --health-cmd "curl -f -u orthanc:orthanc http://localhost:8042/system || exit 1"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -68,9 +68,16 @@ jobs:
       - name: Run Python Unit Tests
         run: uv run --with pydicom python3 scripts/test_generate_synthetic_data.py
 
-      - name: Run Node.js Tests
-        run: npm test
+      - name: Run Node.js Tests with Coverage
+        run: npm test -- --coverage --coverageReporters="lcov"
         env:
           ORTHANC_URL: http://localhost:8042
           DB_HOST: localhost
           DB_PORT: 5432
+
+      - name: Upload coverage report to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage/lcov.info
+          fail_ci_if_error: true
+          token: ${{ secrets.CODECOV_TOKEN }}
