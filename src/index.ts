@@ -5,9 +5,23 @@ import axios from "axios";
 import { pool, initDb } from "./db";
 import { uploadStudy } from "./upload";
 import { buildInstancesPayload, type InstanceRow } from "./instances-util";
+import { requireAuth } from "./auth-middleware";
+import {
+  loginRateLimiter,
+  loginHandler,
+  refreshHandler,
+  logoutHandler,
+} from "./auth";
+import { seedAdminUser } from "./services/user.service";
 
 const app = express();
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
+
+// Trust exactly one hop (the nginx reverse proxy in front of the web
+// deployment) so req.ip / X-Forwarded-For-derived values — used by the
+// login rate limiter to key on the real client IP — aren't just nginx's
+// container IP for every request.
+app.set("trust proxy", 1);
 
 const ORTHANC_URL = process.env.ORTHANC_URL ?? "http://orthanc:8042";
 const ORTHANC_USER = process.env.ORTHANC_USERNAME ?? "orthanc";
@@ -19,6 +33,11 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 app.use(cors());
 app.use(express.json());
+
+// ── Auth (TK-05) ─────────────────────────────────────────────────────────────
+app.post("/auth/login", loginRateLimiter, loginHandler);
+app.post("/auth/refresh", refreshHandler);
+app.post("/auth/logout", logoutHandler);
 
 // ── Health ────────────────────────────────────────────────────────────────────
 app.get("/api/health", async (_req, res) => {
@@ -35,7 +54,7 @@ app.get("/api/health", async (_req, res) => {
 });
 
 // ── Studies (Orthanc proxy) ───────────────────────────────────────────────────
-app.get("/api/studies", async (_req, res) => {
+app.get("/api/studies", requireAuth, async (_req, res) => {
   try {
     const { data } = await axios.get(`${ORTHANC_URL}/studies`, {
       auth: orthancAuth,
@@ -46,7 +65,7 @@ app.get("/api/studies", async (_req, res) => {
   }
 });
 
-app.get("/api/studies/:id", async (req, res) => {
+app.get("/api/studies/:id", requireAuth, async (req, res) => {
   try {
     const { data } = await axios.get(
       `${ORTHANC_URL}/studies/${req.params.id}`,
@@ -66,7 +85,7 @@ app.get("/api/studies/:id", async (req, res) => {
   }
 });
 
-app.delete("/api/studies/:id", async (req, res) => {
+app.delete("/api/studies/:id", requireAuth, async (req, res) => {
   try {
     await axios.delete(`${ORTHANC_URL}/studies/${req.params.id}`, {
       auth: orthancAuth,
@@ -84,7 +103,7 @@ app.delete("/api/studies/:id", async (req, res) => {
 });
 
 // ── DICOM file download (v1) ──────────────────────────────────────────────────
-app.get("/api/v1/studies/:studyId/file", async (req, res) => {
+app.get("/api/v1/studies/:studyId/file", requireAuth, async (req, res) => {
   try {
     const { rows } = await pool.query(
       "SELECT orthanc_instance_id FROM studies WHERE orthanc_study_id = $1 ORDER BY id ASC LIMIT 1",
@@ -113,7 +132,7 @@ app.get("/api/v1/studies/:studyId/file", async (req, res) => {
 });
 
 // ── Study instances (v1) — ordered list so the viewer can walk every image ─────
-app.get("/api/v1/studies/:studyId/instances", async (req, res) => {
+app.get("/api/v1/studies/:studyId/instances", requireAuth, async (req, res) => {
   try {
     const { rows } = await pool.query<InstanceRow>(
       "SELECT id, orthanc_instance_id, instance_number FROM studies WHERE orthanc_study_id = $1",
@@ -132,6 +151,7 @@ app.get("/api/v1/studies/:studyId/instances", async (req, res) => {
 // ── Single instance DICOM file (v1) ────────────────────────────────────────────
 app.get(
   "/api/v1/studies/:studyId/instances/:instanceId/file",
+  requireAuth,
   async (req, res) => {
     try {
       const { rows } = await pool.query(
@@ -161,10 +181,10 @@ app.get(
 );
 
 // ── Upload (v1) ───────────────────────────────────────────────────────────────
-app.post("/api/v1/studies/upload", upload.single("file"), uploadStudy);
+app.post("/api/v1/studies/upload", requireAuth, upload.single("file"), uploadStudy);
 
 // ── Studies from DB — paginated, filtered (v1) ────────────────────────────────
-app.get("/api/v1/studies", async (req, res) => {
+app.get("/api/v1/studies", requireAuth, async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
     const limit = Math.min(
@@ -238,7 +258,7 @@ app.get("/api/v1/studies", async (req, res) => {
 });
 
 // ── Study thumbnail (v1) ──────────────────────────────────────────────────────
-app.get("/api/v1/studies/:studyId/thumbnail", async (req, res) => {
+app.get("/api/v1/studies/:studyId/thumbnail", requireAuth, async (req, res) => {
   try {
     const { rows } = await pool.query(
       "SELECT orthanc_instance_id FROM studies WHERE orthanc_study_id = $1 ORDER BY id ASC LIMIT 1",
@@ -276,10 +296,11 @@ app.get("/api/v1/studies/:studyId/thumbnail", async (req, res) => {
 });
 
 // ── Legacy upload — delegates to uploadStudy so instances appear in the explorer ──
-app.post("/api/instances", upload.single("file"), uploadStudy);
+app.post("/api/instances", requireAuth, upload.single("file"), uploadStudy);
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 initDb()
+  .then(seedAdminUser)
   .then(() => {
     app.listen(PORT, () =>
       console.log(`MICD backend listening on port ${PORT}`),
