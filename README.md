@@ -96,6 +96,15 @@ Asegúrate de que todos los servicios y contenedores estén activos e inspeccion
 make check
 ```
 
+#### Documentación de la API (Swagger)
+
+Con el stack levantado, la documentación interactiva de la API (Swagger UI) está disponible en:
+
+- **Swagger UI:** [http://localhost:3000/api/docs](http://localhost:3000/api/docs)
+- **Especificación OpenAPI (JSON):** [http://localhost:3000/api/docs/openapi.json](http://localhost:3000/api/docs/openapi.json)
+
+La especificación vive en `src/openapi.ts` y debe actualizarse al agregar o modificar endpoints.
+
 ---
 
 ## Variables de Entorno

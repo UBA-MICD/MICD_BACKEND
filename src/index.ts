@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import multer from "multer";
 import axios from "axios";
+import swaggerUi from "swagger-ui-express";
 import { pool, initDb } from "./db";
 import { uploadStudy } from "./upload";
 import { buildInstancesPayload, type InstanceRow } from "./instances-util";
@@ -13,6 +14,7 @@ import {
   logoutHandler,
 } from "./auth";
 import { seedAdminUser } from "./services/user.service";
+import { openapiSpec } from "./openapi";
 
 const app = express();
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
@@ -38,6 +40,9 @@ app.use(express.json());
 app.post("/auth/login", loginRateLimiter, loginHandler);
 app.post("/auth/refresh", refreshHandler);
 app.post("/auth/logout", logoutHandler);
+// ── API docs (Swagger UI) ─────────────────────────────────────────────────────
+app.get("/api/docs/openapi.json", (_req, res) => res.json(openapiSpec));
+app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(openapiSpec));
 
 // ── Health ────────────────────────────────────────────────────────────────────
 app.get("/api/health", async (_req, res) => {
