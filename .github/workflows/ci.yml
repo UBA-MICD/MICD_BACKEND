@@ -33,7 +33,7 @@ jobs:
           ORTHANC__AUTHENTICATION_ENABLED: "true"
           ORTHANC__REGISTERED_USERS: '{"orthanc": "orthanc"}'
         options: >-
-          --health-cmd "python3 -c \"import urllib.request; req = urllib.request.Request('http://localhost:8042/system'); req.add_header('Authorization', 'Basic b3J0aGFuYzpvcnRoYW5j'); urllib.request.urlopen(req, timeout=3)\" || exit 1"
+          --health-cmd 'curl -f -u orthanc:orthanc http://127.0.0.1:8042/system || wget --spider --user=orthanc --password=orthanc http://127.0.0.1:8042/system || exit 1'
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
