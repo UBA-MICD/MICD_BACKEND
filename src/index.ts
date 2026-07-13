@@ -12,6 +12,8 @@ import { zenodoConfigRouter } from './routes/zenodo-config.routes'
 import { zenodoPublishRouter } from './routes/zenodo-publish.routes'
 import { zenodoSearchRouter } from './routes/zenodo-search.routes'
 import { zenodoImportRouter } from './routes/zenodo-import.routes'
+import { zenodoSyncRouter } from './routes/zenodo-sync.routes'
+import { shouldRunSync, runSync } from './services/zenodo-sync.service'
 
 const app = express();
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
@@ -225,7 +227,8 @@ app.get("/api/v1/studies", async (req, res) => {
         MAX(zenodo_source_doi)   AS zenodo_source_doi,
         MAX(zenodo_imported_at)  AS zenodo_imported_at,
         MAX(zenodo_doi)          AS zenodo_doi,
-        MAX(zenodo_published_at) AS zenodo_published_at
+        MAX(zenodo_published_at) AS zenodo_published_at,
+        BOOL_OR(zenodo_new_version_available) AS zenodo_new_version_available
       FROM studies
       WHERE ${filterWhere}
       GROUP BY orthanc_study_id
@@ -299,8 +302,11 @@ app.use('/api/v1/zenodo', zenodoPublishRouter)
 // ── Zenodo search ─────────────────────────────────────────────────────
 app.use('/api/v1/zenodo', zenodoSearchRouter)
 
-// ── Zenodo import (ZEN-08) ────────────────────────────────────────────
+// ── Zenodo import ────────────────────────────────────────────
 app.use('/api/v1/zenodo', zenodoImportRouter)
+
+// ── Zenodo sync config ───────────────────────────────────────
+app.use('/api/v1/zenodo', zenodoSyncRouter)
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 try {
@@ -324,6 +330,15 @@ initDb()
       checkAllEnvironments().catch((err) =>
         console.error('Zenodo health check failed:', err.message),
       )
+    })
+
+    // check every 30 min whether it's time to sync metadata
+    cron.schedule('*/30 * * * *', () => {
+      shouldRunSync()
+        .then((should) => {
+          if (should) return runSync()
+        })
+        .catch((err) => console.error('Zenodo metadata sync failed:', err.message))
     })
   })
   .catch((err) => {

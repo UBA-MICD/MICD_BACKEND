@@ -118,11 +118,17 @@ async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
   throw lastErr
 }
 
-async function fetchRecordDoi(
+export interface ZenodoRecordMeta {
+  doi: string | null
+  version: string | null
+  conceptRecordId: number | null
+}
+
+export async function fetchRecordMeta(
   recordId: number,
   environment: ZenodoEnvironment,
   token: string | null,
-): Promise<string | null> {
+): Promise<ZenodoRecordMeta> {
   try {
     const headers: Record<string, string> = {}
     if (token) headers['Authorization'] = `Bearer ${token}`
@@ -130,9 +136,13 @@ async function fetchRecordDoi(
       headers,
       timeout: parseInt(process.env.ZENODO_TIMEOUT_MS ?? '10000', 10),
     })
-    return (data.doi as string) ?? null
+    return {
+      doi: (data.doi as string) ?? null,
+      version: (data.metadata?.version as string) ?? null,
+      conceptRecordId: data.conceptrecid ? parseInt(data.conceptrecid, 10) : null,
+    }
   } catch {
-    return null
+    return { doi: null, version: null, conceptRecordId: null }
   }
 }
 
@@ -188,7 +198,7 @@ async function importSingleFile(
   environment: ZenodoEnvironment,
   token: string | null,
   overwrite: boolean,
-  sourceDoi: string | null,
+  meta: ZenodoRecordMeta,
 ): Promise<FileImportResult> {
   const url = downloadUrl(environment, recordId, fileKey)
 
@@ -263,29 +273,33 @@ async function importSingleFile(
          (orthanc_study_id, orthanc_instance_id, sop_instance_uid, study_instance_uid,
           patient_name, patient_id, study_date, modality, study_description,
           instance_number, rows_count, cols_count,
-          zenodo_source_record_id, zenodo_source_doi, zenodo_imported_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW())
+          zenodo_source_record_id, zenodo_source_doi, zenodo_imported_at,
+          zenodo_version, zenodo_concept_record_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW(),$15,$16)
        ON CONFLICT (sop_instance_uid) DO UPDATE SET
-         orthanc_study_id         = EXCLUDED.orthanc_study_id,
-         orthanc_instance_id      = EXCLUDED.orthanc_instance_id,
-         study_instance_uid       = EXCLUDED.study_instance_uid,
-         patient_name             = EXCLUDED.patient_name,
-         patient_id               = EXCLUDED.patient_id,
-         study_date               = EXCLUDED.study_date,
-         modality                 = EXCLUDED.modality,
-         study_description        = EXCLUDED.study_description,
-         instance_number          = EXCLUDED.instance_number,
-         rows_count               = EXCLUDED.rows_count,
-         cols_count               = EXCLUDED.cols_count,
-         zenodo_source_record_id  = EXCLUDED.zenodo_source_record_id,
-         zenodo_source_doi        = EXCLUDED.zenodo_source_doi,
-         zenodo_imported_at       = NOW(),
-         uploaded_at              = NOW()`,
+         orthanc_study_id          = EXCLUDED.orthanc_study_id,
+         orthanc_instance_id       = EXCLUDED.orthanc_instance_id,
+         study_instance_uid        = EXCLUDED.study_instance_uid,
+         patient_name              = EXCLUDED.patient_name,
+         patient_id                = EXCLUDED.patient_id,
+         study_date                = EXCLUDED.study_date,
+         modality                  = EXCLUDED.modality,
+         study_description         = EXCLUDED.study_description,
+         instance_number           = EXCLUDED.instance_number,
+         rows_count                = EXCLUDED.rows_count,
+         cols_count                = EXCLUDED.cols_count,
+         zenodo_source_record_id   = EXCLUDED.zenodo_source_record_id,
+         zenodo_source_doi         = EXCLUDED.zenodo_source_doi,
+         zenodo_imported_at        = NOW(),
+         zenodo_version            = EXCLUDED.zenodo_version,
+         zenodo_concept_record_id  = EXCLUDED.zenodo_concept_record_id,
+         uploaded_at               = NOW()`,
       [
         studyId, instanceId, sopInstanceUid, studyInstanceUid,
         patientName, patientId, studyDate, modality, studyDesc,
         instanceNumber, rows, cols,
-        recordId, sourceDoi,
+        recordId, meta.doi,
+        meta.version, meta.conceptRecordId,
       ],
     )
   } catch (err: unknown) {
@@ -300,7 +314,8 @@ export async function importFromZenodo(opts: ImportOptions): Promise<ImportResul
   const { recordId, environment, files, overwriteDuplicates = false, userId, ip } = opts
 
   const token = await getStoredToken(environment)
-  const sourceDoi = await fetchRecordDoi(recordId, environment, token)
+  const recordMeta = await fetchRecordMeta(recordId, environment, token)
+  const sourceDoi = recordMeta.doi
 
   const totalSize = files.reduce((acc, f) => acc + (f.fileSize ?? 0), 0)
   const largeSizeWarning = totalSize > TEN_GB
@@ -348,7 +363,7 @@ export async function importFromZenodo(opts: ImportOptions): Promise<ImportResul
       [importId, f.fileKey],
     )
 
-    const result = await importSingleFile(f.fileKey, recordId, environment, token, overwriteDuplicates, sourceDoi)
+    const result = await importSingleFile(f.fileKey, recordId, environment, token, overwriteDuplicates, recordMeta)
     results.push(result)
 
     const newStatus = result.status === 'imported' ? 'imported'

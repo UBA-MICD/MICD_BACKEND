@@ -87,10 +87,37 @@ export async function initDb(): Promise<void> {
     -- Zenodo publication status on the study 
     ALTER TABLE studies ADD COLUMN IF NOT EXISTS zenodo_doi TEXT;
     ALTER TABLE studies ADD COLUMN IF NOT EXISTS zenodo_published_at TIMESTAMPTZ;
-    -- Zenodo import origin badge 
+    -- Zenodo import origin badge
     ALTER TABLE studies ADD COLUMN IF NOT EXISTS zenodo_source_record_id INTEGER;
     ALTER TABLE studies ADD COLUMN IF NOT EXISTS zenodo_source_doi TEXT;
     ALTER TABLE studies ADD COLUMN IF NOT EXISTS zenodo_imported_at TIMESTAMPTZ;
+    -- Zenodo version tracking for sync 
+    ALTER TABLE studies ADD COLUMN IF NOT EXISTS zenodo_version TEXT;
+    ALTER TABLE studies ADD COLUMN IF NOT EXISTS zenodo_concept_record_id INTEGER;
+    ALTER TABLE studies ADD COLUMN IF NOT EXISTS zenodo_new_version_available BOOLEAN DEFAULT FALSE;
+
+    -- sync scheduler config (singleton row, id=1)
+    CREATE TABLE IF NOT EXISTS zenodo_sync_config (
+      id             INTEGER PRIMARY KEY DEFAULT 1,
+      interval_hours INTEGER,  -- NULL = disabled; valid: 6, 12, 24, 168
+      last_run_at    TIMESTAMPTZ,
+      updated_at     TIMESTAMPTZ DEFAULT NOW()
+    );
+    INSERT INTO zenodo_sync_config (id, interval_hours)
+    VALUES (1, 24)
+    ON CONFLICT (id) DO NOTHING;
+
+    -- ZEN-10: audit log of each sync run
+    CREATE TABLE IF NOT EXISTS zenodo_sync_log (
+      id               SERIAL PRIMARY KEY,
+      started_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      completed_at     TIMESTAMPTZ,
+      status           TEXT CHECK (status IN ('running', 'completed', 'failed')),
+      records_checked  INTEGER NOT NULL DEFAULT 0,
+      new_versions     INTEGER NOT NULL DEFAULT 0,
+      errors           INTEGER NOT NULL DEFAULT 0,
+      error_detail     TEXT
+    );
 
     -- deposition lifecycle (one row per publish attempt per study)
     CREATE TABLE IF NOT EXISTS zenodo_depositions (
