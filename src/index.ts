@@ -10,6 +10,7 @@ import { assertEncryptionKeyConfigured } from './services/encryption.service'
 import { checkAllEnvironments } from './services/zenodo.service'
 import { zenodoConfigRouter } from './routes/zenodo-config.routes'
 import { zenodoPublishRouter } from './routes/zenodo-publish.routes'
+import { zenodoSearchRouter } from './routes/zenodo-search.routes'
 
 const app = express();
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
@@ -288,6 +289,9 @@ app.use('/api/v1/zenodo', zenodoConfigRouter)
 
 // ── Zenodo publish  ───────────────────────────────────────────────────
 app.use('/api/v1/zenodo', zenodoPublishRouter)
+
+// ── Zenodo search ─────────────────────────────────────────────────────
+app.use('/api/v1/zenodo', zenodoSearchRouter)
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 try {
