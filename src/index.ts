@@ -9,6 +9,7 @@ import { buildInstancesPayload, type InstanceRow } from './instances-util'
 import { assertEncryptionKeyConfigured } from './services/encryption.service'
 import { checkAllEnvironments } from './services/zenodo.service'
 import { zenodoConfigRouter } from './routes/zenodo-config.routes'
+import { zenodoPublishRouter } from './routes/zenodo-publish.routes'
 
 const app = express();
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
@@ -282,8 +283,11 @@ app.get("/api/v1/studies/:studyId/thumbnail", async (req, res) => {
 // ── Legacy upload — delegates to uploadStudy so instances appear in the explorer ──
 app.post("/api/instances", upload.single("file"), uploadStudy);
 
-// ── Zenodo credentials configuration (ZEN-01) ─────────────────────────────────
+// ── Zenodo credentials configuration ─────────────────────────────────
 app.use('/api/v1/zenodo', zenodoConfigRouter)
+
+// ── Zenodo publish  ───────────────────────────────────────────────────
+app.use('/api/v1/zenodo', zenodoPublishRouter)
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 try {
