@@ -11,6 +11,8 @@ PORT_TO_USE=${PORT:-${BACKEND_PORT:-3000}}
 ORTHANC_PORT_TO_USE=${ORTHANC_PORT:-${ORTHANC_HTTP_PORT:-8042}}
 ORTHANC_USER_TO_USE=${ORTHANC_USER:-${ORTHANC_USERNAME:-orthanc}}
 ORTHANC_PASS_TO_USE=${ORTHANC_PASSWORD:-orthanc}
+LOGIN_EMAIL_TO_USE=${TEST_USER_EMAIL:-test@micd.local}
+LOGIN_PASSWORD_TO_USE=${TEST_USER_PASSWORD:-testpassword}
 
 CYAN='\033[0;36m'
 GREEN='\033[0;32m'
@@ -58,7 +60,17 @@ else
   fail "GET /api/health → not reachable or degraded"
 fi
 
-STUDIES=$(curl -sf http://localhost:"${PORT_TO_USE}"/api/studies 2>/dev/null || echo "")
+TOKEN=$(curl -sf -X POST http://localhost:"${PORT_TO_USE}"/auth/login \
+  -H "Content-Type: application/json" \
+  -d "{\"email\":\"${LOGIN_EMAIL_TO_USE}\",\"password\":\"${LOGIN_PASSWORD_TO_USE}\"}" \
+  2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('accessToken',''))" 2>/dev/null)
+if [ -n "$TOKEN" ]; then
+  ok "POST /auth/login → got access token"
+else
+  fail "POST /auth/login → failed to authenticate as ${LOGIN_EMAIL_TO_USE}"
+fi
+
+STUDIES=$(curl -sf -H "Authorization: Bearer ${TOKEN}" http://localhost:"${PORT_TO_USE}"/api/studies 2>/dev/null || echo "")
 if echo "$STUDIES" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null; then
   COUNT=$(echo "$STUDIES" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null)
   ok "GET /api/studies → $COUNT study/studies in Orthanc"
