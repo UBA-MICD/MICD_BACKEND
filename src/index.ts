@@ -11,6 +11,7 @@ import { checkAllEnvironments } from './services/zenodo.service'
 import { zenodoConfigRouter } from './routes/zenodo-config.routes'
 import { zenodoPublishRouter } from './routes/zenodo-publish.routes'
 import { zenodoSearchRouter } from './routes/zenodo-search.routes'
+import { zenodoImportRouter } from './routes/zenodo-import.routes'
 
 const app = express();
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
@@ -219,7 +220,12 @@ app.get("/api/v1/studies", async (req, res) => {
         MAX(modality)            AS modality,
         MAX(study_description)   AS study_description,
         MAX(uploaded_at)         AS uploaded_at,
-        COUNT(*)                 AS num_instances
+        COUNT(*)                 AS num_instances,
+        MAX(zenodo_source_record_id) AS zenodo_source_record_id,
+        MAX(zenodo_source_doi)   AS zenodo_source_doi,
+        MAX(zenodo_imported_at)  AS zenodo_imported_at,
+        MAX(zenodo_doi)          AS zenodo_doi,
+        MAX(zenodo_published_at) AS zenodo_published_at
       FROM studies
       WHERE ${filterWhere}
       GROUP BY orthanc_study_id
@@ -292,6 +298,9 @@ app.use('/api/v1/zenodo', zenodoPublishRouter)
 
 // ── Zenodo search ─────────────────────────────────────────────────────
 app.use('/api/v1/zenodo', zenodoSearchRouter)
+
+// ── Zenodo import (ZEN-08) ────────────────────────────────────────────
+app.use('/api/v1/zenodo', zenodoImportRouter)
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 try {

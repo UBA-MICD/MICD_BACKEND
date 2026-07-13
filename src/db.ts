@@ -84,9 +84,13 @@ export async function initDb(): Promise<void> {
 
     -- anonymization tracking (populated by US-16)
     ALTER TABLE studies ADD COLUMN IF NOT EXISTS anonymized_at TIMESTAMPTZ;
-    -- Zenodo publication status on the study
+    -- Zenodo publication status on the study 
     ALTER TABLE studies ADD COLUMN IF NOT EXISTS zenodo_doi TEXT;
     ALTER TABLE studies ADD COLUMN IF NOT EXISTS zenodo_published_at TIMESTAMPTZ;
+    -- Zenodo import origin badge 
+    ALTER TABLE studies ADD COLUMN IF NOT EXISTS zenodo_source_record_id INTEGER;
+    ALTER TABLE studies ADD COLUMN IF NOT EXISTS zenodo_source_doi TEXT;
+    ALTER TABLE studies ADD COLUMN IF NOT EXISTS zenodo_imported_at TIMESTAMPTZ;
 
     -- deposition lifecycle (one row per publish attempt per study)
     CREATE TABLE IF NOT EXISTS zenodo_depositions (
@@ -107,6 +111,38 @@ export async function initDb(): Promise<void> {
       created_at       TIMESTAMPTZ DEFAULT NOW(),
       published_at     TIMESTAMPTZ,
       error_message    TEXT
+    );
+
+    -- import job tracking (one row per import request)
+    CREATE TABLE IF NOT EXISTS zenodo_imports (
+      id             SERIAL PRIMARY KEY,
+      record_id      INTEGER NOT NULL,
+      environment    zenodo_environment NOT NULL,
+      source_doi     TEXT,
+      status         TEXT NOT NULL DEFAULT 'pending'
+                     CHECK (status IN ('pending', 'in_progress', 'completed', 'partial', 'failed')),
+      total_files    INTEGER NOT NULL DEFAULT 0,
+      imported_files INTEGER NOT NULL DEFAULT 0,
+      duplicate_files INTEGER NOT NULL DEFAULT 0,
+      failed_files   INTEGER NOT NULL DEFAULT 0,
+      created_by     INTEGER REFERENCES users(id),
+      created_at     TIMESTAMPTZ DEFAULT NOW(),
+      completed_at   TIMESTAMPTZ
+    );
+
+    -- per-file status within an import job
+    CREATE TABLE IF NOT EXISTS zenodo_import_files (
+      id               SERIAL PRIMARY KEY,
+      import_id        INTEGER NOT NULL REFERENCES zenodo_imports(id),
+      file_key         TEXT NOT NULL,
+      file_size        BIGINT,
+      status           TEXT NOT NULL DEFAULT 'pending'
+                       CHECK (status IN ('pending', 'downloading', 'imported', 'duplicate', 'failed', 'skipped')),
+      orthanc_study_id TEXT,
+      sop_instance_uid TEXT,
+      attempts         INTEGER NOT NULL DEFAULT 0,
+      last_error       TEXT,
+      imported_at      TIMESTAMPTZ
     );
 
     -- per-file upload tracking within a deposition
