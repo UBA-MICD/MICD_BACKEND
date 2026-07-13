@@ -1,3 +1,5 @@
+[![codecov](https://codecov.io/gh/UBA-MICD/MICD_BACKEND/graph/badge.svg?token=IE497ZSIRW)](https://codecov.io/gh/UBA-MICD/MICD_BACKEND)
+
 # MICD Backend Service
 
 Este repositorio contiene la API REST y la capa de persistencia del sistema **MICD** para la gestión e ingesta de estudios médicos en formato DICOM.
@@ -157,3 +159,11 @@ make hooks
 ```
 
 Esto ejecutará automáticamente **Prettier**, **ESLint**, **CSpell** y las **pruebas de integración** antes de confirmar o subir tus commits.
+
+## Seguimiento de Cobertura
+
+Mantenemos un control estricto de la calidad del código. A continuación, puedes revisar el gráfico de cobertura actual generado por Codecov:
+
+[![Gráfico circular de cobertura de Codecov](https://codecov.io/gh/UBA-MICD/MICD_BACKEND/graphs/sunburst.svg?token=IE497ZSIRW)](https://codecov.io/gh/UBA-MICD/MICD_BACKEND)
+
+> **Nota:** Haz clic en el gráfico para ver el reporte detallado línea por línea en el panel de Codecov.
