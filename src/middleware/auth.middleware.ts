@@ -1,9 +1,14 @@
-import { RequestHandler } from 'express'
+import type { Request, RequestHandler } from 'express'
 import jwt from 'jsonwebtoken'
 
 interface AuthPayload {
   id: number
   role: string
+}
+
+// Use this type in route handlers that run after authenticate + requireAdmin
+export interface AuthenticatedRequest extends Request {
+  user: AuthPayload
 }
 
 declare global {
@@ -12,6 +17,15 @@ declare global {
       user?: AuthPayload
     }
   }
+}
+
+function isAuthPayload(value: unknown): value is AuthPayload {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as Record<string, unknown>).id === 'number' &&
+    typeof (value as Record<string, unknown>).role === 'string'
+  )
 }
 
 export const authenticate: RequestHandler = (req, res, next) => {
@@ -29,7 +43,11 @@ export const authenticate: RequestHandler = (req, res, next) => {
 
   const token = header.slice('Bearer '.length)
   try {
-    const payload = jwt.verify(token, secret) as AuthPayload
+    const payload = jwt.verify(token, secret)
+    if (!isAuthPayload(payload)) {
+      res.status(401).json({ error: 'Token inválido o expirado' })
+      return
+    }
     req.user = { id: payload.id, role: payload.role }
     next()
   } catch {
