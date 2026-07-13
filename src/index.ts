@@ -2,10 +2,12 @@ import express from 'express'
 import cors from 'cors'
 import multer from 'multer'
 import axios from 'axios'
+import cron from 'node-cron'
 import { pool, initDb } from './db'
 import { uploadStudy } from './upload'
 import { buildInstancesPayload, type InstanceRow } from './instances-util'
 import { assertEncryptionKeyConfigured } from './services/encryption.service'
+import { checkAllEnvironments } from './services/zenodo.service'
 import { zenodoConfigRouter } from './routes/zenodo-config.routes'
 
 const app = express()
@@ -254,6 +256,16 @@ try {
 initDb()
   .then(() => {
     app.listen(PORT, () => console.log(`MICD backend listening on port ${PORT}`))
+
+    // ZEN-02: run health check at startup, then every hour
+    checkAllEnvironments().catch((err) =>
+      console.error('Zenodo health check failed:', err.message),
+    )
+    cron.schedule('0 * * * *', () => {
+      checkAllEnvironments().catch((err) =>
+        console.error('Zenodo health check failed:', err.message),
+      )
+    })
   })
   .catch((err) => {
     console.error('Failed to initialize DB:', err)

@@ -46,3 +46,66 @@ export async function getStoredToken(environment: ZenodoEnvironment): Promise<st
   if (rows.length === 0) return null
   return decrypt(rows[0].token_encrypted)
 }
+
+export type ZenodoHealthStatus = 'connected' | 'error' | 'unconfigured'
+
+export interface ZenodoHealthRow {
+  environment: ZenodoEnvironment
+  status: ZenodoHealthStatus
+  error_reason: string | null
+  last_checked: Date
+  last_success: Date | null
+}
+
+export async function checkHealth(environment: ZenodoEnvironment): Promise<ZenodoHealthRow> {
+  const token = await getStoredToken(environment)
+
+  if (token === null) {
+    const { rows } = await pool.query<ZenodoHealthRow>(
+      `INSERT INTO zenodo_health (environment, status, error_reason, last_checked, last_success)
+       VALUES ($1, 'unconfigured', NULL, NOW(), NULL)
+       ON CONFLICT (environment) DO UPDATE SET
+         status       = 'unconfigured',
+         error_reason = NULL,
+         last_checked = NOW(),
+         last_success = NULL
+       RETURNING *`,
+      [environment],
+    )
+    return rows[0]
+  }
+
+  const result = await validateToken(token, environment)
+
+  if (result.valid) {
+    const { rows } = await pool.query<ZenodoHealthRow>(
+      `INSERT INTO zenodo_health (environment, status, error_reason, last_checked, last_success)
+       VALUES ($1, 'connected', NULL, NOW(), NOW())
+       ON CONFLICT (environment) DO UPDATE SET
+         status       = 'connected',
+         error_reason = NULL,
+         last_checked = NOW(),
+         last_success = NOW()
+       RETURNING *`,
+      [environment],
+    )
+    return rows[0]
+  }
+
+  // On error: preserve last_success from previous row if it exists
+  const { rows } = await pool.query<ZenodoHealthRow>(
+    `INSERT INTO zenodo_health (environment, status, error_reason, last_checked, last_success)
+     VALUES ($1, 'error', $2, NOW(), NULL)
+     ON CONFLICT (environment) DO UPDATE SET
+       status       = 'error',
+       error_reason = $2,
+       last_checked = NOW()
+     RETURNING *`,
+    [environment, result.reason],
+  )
+  return rows[0]
+}
+
+export async function checkAllEnvironments(): Promise<void> {
+  await Promise.all((['sandbox', 'production'] as ZenodoEnvironment[]).map(checkHealth))
+}

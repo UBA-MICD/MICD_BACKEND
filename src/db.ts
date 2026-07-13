@@ -71,5 +71,15 @@ export async function initDb(): Promise<void> {
       created_at      TIMESTAMPTZ DEFAULT NOW(),
       updated_at      TIMESTAMPTZ DEFAULT NOW()
     );
+    ALTER TABLE zenodo_config ADD COLUMN IF NOT EXISTS token_expires_at TIMESTAMPTZ;
+
+    -- ZEN-02: Zenodo health check results (one row per environment, upserted on each check)
+    CREATE TABLE IF NOT EXISTS zenodo_health (
+      environment  zenodo_environment PRIMARY KEY,
+      status       TEXT NOT NULL CHECK (status IN ('connected', 'error', 'unconfigured')),
+      error_reason TEXT,
+      last_checked TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_success TIMESTAMPTZ
+    );
   `)
 }
