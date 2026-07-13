@@ -6,14 +6,77 @@ All examples use `http://localhost:3000`. Replace tokens, IDs, and study IDs wit
 
 ## 0. Prerequisites
 
-**Get an auth token** (needed for most endpoints):
+### Start the stack
 
 ```bash
-TOKEN=$(curl -s -X POST http://localhost:3000/api/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"admin@example.com","password":"your-password"}' \
-  | jq -r '.token')
+docker compose up -d
 ```
+
+Wait for all three containers to be healthy:
+
+```bash
+docker compose ps
+```
+
+### Seed the admin user
+
+The `users` table is empty on a fresh DB. The JWT uses `id: 1`, so insert the admin row first:
+
+```bash
+docker compose exec postgres psql -U micd -d micd -c "
+INSERT INTO users (id, email, password_hash, role)
+VALUES (1, 'admin@example.com', 'placeholder', 'admin')
+ON CONFLICT (id) DO NOTHING;
+"
+```
+
+### Seed a study in the local DB
+
+The publish endpoint looks up the study in the local `studies` table (not directly in Orthanc). Insert a row pointing to an Orthanc study that has `anonymized_at` set:
+
+```bash
+# First upload DICOMs to Orthanc and get the study ID
+STUDY_ID=$(curl -s http://localhost:8042/studies -u orthanc:orthanc | jq -r '.[0]')
+
+# Then insert it into the local DB
+docker compose exec postgres psql -U micd -d micd -c "
+INSERT INTO studies (orthanc_study_id, orthanc_instance_id, sop_instance_uid, anonymized_at)
+VALUES (
+  '$STUDY_ID',
+  'YOUR-INSTANCE-ID',
+  'YOUR-SOP-UID',
+  NOW()
+) ON CONFLICT DO NOTHING;
+"
+```
+
+> **Tested values:** `orthanc_study_id = 6fbf0b01-6c97a45c-6ba1f385-136ebe7e-98953809`
+
+### Get an auth token
+
+There is no `/auth/login` endpoint. Generate a signed JWT directly from the CLI:
+
+```bash
+export JWT_SECRET=$(grep '^JWT_SECRET=' .env | cut -d= -f2-)
+export JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+
+TOKEN=$(node -e "
+  const jwt = require('jsonwebtoken');
+  console.log(jwt.sign({ id: 1, role: 'admin' }, process.env.JWT_SECRET, { expiresIn: '24h' }));
+")
+echo $TOKEN
+```
+
+Set `TOKEN` in your shell before running any curl commands below. Valid for 24 hours.
+
+### Verify the stack is up
+
+```bash
+curl http://localhost:3000/api/v1/zenodo/config/status \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Expected: `{ "sandbox": { "configured": false, ... }, "production": { ... } }`
 
 ---
 
@@ -31,7 +94,7 @@ curl -X POST http://localhost:3000/api/v1/zenodo/config \
   }'
 ```
 
-Expected: `200` with `{ "environment": "sandbox", "token_hint": "xxxx" }`
+Expected: `200` with `{ "status": "connected", "environment": "sandbox", "hint": "xxxx...XXXX" }`
 
 **Check connection status:**
 
@@ -40,7 +103,7 @@ curl http://localhost:3000/api/v1/zenodo/config/status \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-Expected: `{ "sandbox": { "status": "connected", ... }, "production": { ... } }`
+Expected: `{ "sandbox": { "configured": true, ... }, "production": { "configured": false, ... } }`
 
 **Remove a token:**
 
@@ -55,7 +118,7 @@ Expected: `204`
 
 ## 2. Publish anonymized study
 
-First find a study ID and make sure it's been anonymized (has `anonymized_at` set).
+> Requires: Zenodo sandbox token stored (section 1) and a study in the local DB with `anonymized_at` set (section 0).
 
 **Publish:**
 
@@ -64,7 +127,7 @@ curl -X POST http://localhost:3000/api/v1/zenodo/publish \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "orthanc_study_id": "ORTHANC-STUDY-ID",
+    "orthanc_study_id": "6fbf0b01-6c97a45c-6ba1f385-136ebe7e-98953809",
     "environment": "sandbox",
     "title": "Test CT Dataset",
     "description": "Anonymized CT lung scan for testing.",
@@ -74,47 +137,42 @@ curl -X POST http://localhost:3000/api/v1/zenodo/publish \
   }'
 ```
 
-Expected: `201` with `{ "deposition_id": ..., "doi": "10.5072/zenodo...", "files_uploaded": N, "total_bytes": N }`
+Expected: `{ "deposition_id": 1, "doi": "10.5072/zenodo.561205", "files_uploaded": 1, "total_bytes": 9084 }`
 
-**Test size rejection (no real 50 GB file needed — modify the check in a test env or use force flag):**
-
-```bash
-curl -X POST http://localhost:3000/api/v1/zenodo/publish \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    ...same body...,
-    "force_large_upload": true
-  }'
-```
-
-**Poll deposition status:**
+**Poll deposition status** (use the `deposition_id` from the publish response):
 
 ```bash
-curl http://localhost:3000/api/v1/zenodo/depositions/42 \
+curl http://localhost:3000/api/v1/zenodo/depositions/1 \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-Expected: `{ "deposition": { "status": "published", "doi": "..." }, "files": [...] }`
+Expected: `{ "deposition": { "status": "published", "doi": "10.5072/zenodo.561205", ... }, "files": [...] }`
 
-**Test error cases:**
+**Test error — study not found:**
 
 ```bash
-# Not anonymized
 curl -X POST http://localhost:3000/api/v1/zenodo/publish \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{ "orthanc_study_id": "not-anonymized-study-id", "environment": "sandbox", ... }'
+  -d '{
+    "orthanc_study_id": "non-existent",
+    "environment": "sandbox",
+    "title": "Test", "description": "Test", "authors": [{"name": "Test"}]
+  }'
+# Expected: 404 { "error": "Estudio no encontrado", "code": "study_not_found" }
+```
+
+**Test error — study not anonymized:**
+
+Insert a study without `anonymized_at`, then publish it.
+```bash
 # Expected: 422 { "code": "not_anonymized" }
+```
 
-# No credentials
-# First delete the token, then publish
+**Test error — no credentials:**
+
+Delete the token (section 1), then attempt publish.
+```bash
 # Expected: 422 { "code": "no_credentials" }
-
-# Study not found
-curl -X POST http://localhost:3000/api/v1/zenodo/publish \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{ "orthanc_study_id": "non-existent", "environment": "sandbox", ... }'
-# Expected: 404 { "code": "study_not_found" }
 ```
 
 ---
@@ -124,7 +182,8 @@ curl -X POST http://localhost:3000/api/v1/zenodo/publish \
 **Basic search:**
 
 ```bash
-curl "http://localhost:3000/api/v1/zenodo/search?q=lung+CT&environment=sandbox"
+curl "http://localhost:3000/api/v1/zenodo/search?q=CT&environment=sandbox" \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 Expected: `{ "records": [...], "total": N, "page": 1, "size": 20 }`
@@ -132,13 +191,15 @@ Expected: `{ "records": [...], "total": N, "page": 1, "size": 20 }`
 **With filters:**
 
 ```bash
-curl "http://localhost:3000/api/v1/zenodo/search?q=brain&file_type=dcm&date_from=2023-01-01&date_to=2024-12-31&size=5&environment=sandbox"
+curl "http://localhost:3000/api/v1/zenodo/search?q=CT&file_type=dcm&date_from=2023-01-01&date_to=2026-12-31&size=5&environment=sandbox" \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
-**Get a specific record:**
+**Get a specific record** (use a real record ID from the search results or the published one):
 
 ```bash
-curl "http://localhost:3000/api/v1/zenodo/records/1234567?environment=sandbox"
+curl "http://localhost:3000/api/v1/zenodo/records/561205?environment=sandbox" \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 Expected: record detail with `files[]` array and `importable: true/false`.
@@ -146,15 +207,16 @@ Expected: record detail with `files[]` array and `importable: true/false`.
 **Test no results:**
 
 ```bash
-curl "http://localhost:3000/api/v1/zenodo/search?q=xyzthiswillnevermatch"
-# Expected: { "records": [], "total": 0, "message": "...", "suggestions": [...] }
+curl "http://localhost:3000/api/v1/zenodo/search?q=xyzthiswillnevermatch&environment=sandbox" \
+  -H "Authorization: Bearer $TOKEN"
+# Expected: { "records": [], "total": 0 }
 ```
 
 ---
 
 ## 4. Import from Zenodo
 
-First search for a record that has `.dcm` files (`importable: true`), then import.
+> Use a real record ID from the sandbox. The record published in section 2 (`561205`) works.
 
 **Import files from a record:**
 
@@ -163,17 +225,23 @@ curl -X POST http://localhost:3000/api/v1/zenodo/import \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "record_id": 1234567,
+    "record_id": 561205,
     "environment": "sandbox",
     "files": [
-      { "fileKey": "scan_001.dcm", "fileSize": 2097152 },
-      { "fileKey": "scan_002.dcm" }
+      { "fileKey": "2339bb3d-902b7d65-a57dcdd6-4c4a1e0a-e5fb37fe.dcm" }
     ],
     "overwrite_duplicates": false
   }'
 ```
 
-Expected: `201` with import result including per-file statuses.
+Expected: `{ "import_id": N, "imported": 1, "duplicates": 0, "failed": 0, "results": [...] }`
+
+**Test duplicate handling:**
+
+Run the same import again without `overwrite_duplicates`:
+```bash
+# Expected: { "duplicates": 1, "imported": 0, "failed": 0 }
+```
 
 **Poll import job:**
 
@@ -182,26 +250,30 @@ curl http://localhost:3000/api/v1/zenodo/imports/1 \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-**Test duplicate handling:**
-
-Run the same import twice without `overwrite_duplicates`. Second run should return `200` with `duplicates: N, imported: 0`.
-
 **Test overwrite:**
 
 ```bash
 curl -X POST http://localhost:3000/api/v1/zenodo/import \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{ ...same body..., "overwrite_duplicates": true }'
-# Expected: 201, files re-imported
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "record_id": 561205,
+    "environment": "sandbox",
+    "files": [
+      { "fileKey": "2339bb3d-902b7d65-a57dcdd6-4c4a1e0a-e5fb37fe.dcm" }
+    ],
+    "overwrite_duplicates": true
+  }'
+# Expected: { "imported": 1, "duplicates": 0 }
 ```
 
 **Test ZIP skip:**
 
-Include a `.zip` file in the `files` array. Expected: `{ "status": "skipped" }` for that file.
+Include a `.zip` filename in the `files` array. Expected: that file returns `{ "status": "skipped" }`.
 
 **Test non-importable record:**
 
-Use a record with only `.pdf` files. Expected: `422`.
+Use a record with no `.dcm` files. Expected: `422`.
 
 ---
 
@@ -212,8 +284,9 @@ Use a record with only `.pdf` files. Expected: `422`.
 ```bash
 curl http://localhost:3000/api/v1/zenodo/config/sync \
   -H "Authorization: Bearer $TOKEN"
-# Expected: { "interval_hours": 24, "last_run_at": null, "valid_intervals": [6,12,24,168] }
 ```
+
+Expected: `{ "interval_hours": 24, "last_run_at": null, "valid_intervals": [6, 12, 24, 168] }`
 
 **Update the schedule:**
 
@@ -222,8 +295,11 @@ curl -X PUT http://localhost:3000/api/v1/zenodo/config/sync \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{ "interval_hours": 12 }'
 # Expected: 200 with updated config
+```
 
-# Disable sync
+**Disable sync:**
+
+```bash
 curl -X PUT http://localhost:3000/api/v1/zenodo/config/sync \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{ "interval_hours": null }'
@@ -258,7 +334,7 @@ curl "http://localhost:3000/api/v1/zenodo/config/sync/logs?limit=10" \
 ## 6. Quota and rate limit
 
 ```bash
-curl "http://localhost:3000/api/v1/zenodo/quota?environment=production" \
+curl "http://localhost:3000/api/v1/zenodo/quota?environment=sandbox" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -266,8 +342,8 @@ Expected:
 
 ```json
 {
-  "environment": "production",
-  "used_bytes": 0,
+  "environment": "sandbox",
+  "used_bytes": 9084,
   "limit_bytes": 53687091200,
   "percent_used": 0.0,
   "alert": false,
@@ -280,7 +356,7 @@ Expected:
 }
 ```
 
-**Trigger the quota alert** (for manual testing): temporarily set `ZENODO_QUOTA_LIMIT_GB=1` in your environment and publish a file larger than 0.9 GB.
+**Trigger the quota alert** (for manual testing): temporarily set `ZENODO_QUOTA_LIMIT_GB=1` in the container environment and publish a file larger than 0.9 GB.
 
 ---
 
