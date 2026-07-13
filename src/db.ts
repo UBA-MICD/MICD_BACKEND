@@ -185,5 +185,14 @@ export async function initDb(): Promise<void> {
       last_error          TEXT,
       uploaded_at         TIMESTAMPTZ
     );
+
+    -- sliding-window rate limit counter (shared across processes)
+    CREATE TABLE IF NOT EXISTS zenodo_api_requests (
+      id           SERIAL PRIMARY KEY,
+      environment  zenodo_environment NOT NULL,
+      requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_zenodo_api_requests_env_time
+      ON zenodo_api_requests(environment, requested_at);
   `)
 }

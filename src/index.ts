@@ -13,6 +13,7 @@ import { zenodoPublishRouter } from './routes/zenodo-publish.routes'
 import { zenodoSearchRouter } from './routes/zenodo-search.routes'
 import { zenodoImportRouter } from './routes/zenodo-import.routes'
 import { zenodoSyncRouter } from './routes/zenodo-sync.routes'
+import { zenodoQuotaRouter } from './routes/zenodo-quota.routes'
 import { shouldRunSync, runSync } from './services/zenodo-sync.service'
 
 const app = express();
@@ -307,6 +308,9 @@ app.use('/api/v1/zenodo', zenodoImportRouter)
 
 // ── Zenodo sync config ───────────────────────────────────────
 app.use('/api/v1/zenodo', zenodoSyncRouter)
+
+// ── Zenodo quota & rate limit (ZEN-17) ───────────────────────
+app.use('/api/v1/zenodo', zenodoQuotaRouter)
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 try {

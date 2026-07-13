@@ -16,6 +16,11 @@ jest.mock('../audit.service', () => ({
   },
   logActionWithClient: jest.fn(),
 }))
+jest.mock('../zenodo-rate-limit.service', () => ({
+  throttle: jest.fn().mockResolvedValue(undefined),
+  THROTTLE_AT: 50,
+  FIFTY_GB: 50 * 1024 * 1024 * 1024,
+}))
 
 const mockedAxios = axios as jest.Mocked<typeof axios>
 const poolQuery = pool.query as jest.Mock
@@ -118,7 +123,7 @@ describe('publishStudy', () => {
     const result = await publishStudy(PUBLISH_OPTS)
     expect(result.doi).toBe(DOI)
     expect(result.filesUploaded).toBe(2)
-    expect(result.largeSizeWarning).toBe(false)
+    expect(result.totalBytes).toBeGreaterThanOrEqual(0)
   })
 
   it('throws not_anonymized when any instance has null anonymized_at', async () => {

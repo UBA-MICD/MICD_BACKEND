@@ -2,8 +2,7 @@ import axios from 'axios'
 import { pool } from '../db'
 import { type ZenodoEnvironment, getStoredToken } from './zenodo.service'
 import { AUDIT_ACTIONS, logActionWithClient } from './audit.service'
-
-const FIFTY_GB = 50 * 1024 * 1024 * 1024
+import { throttle, FIFTY_GB } from './zenodo-rate-limit.service'
 
 const BASE_URL: Record<ZenodoEnvironment, string> = {
   sandbox: 'https://sandbox.zenodo.org/api',
@@ -94,6 +93,7 @@ async function createZenodoDeposition(
   token: string,
   environment: ZenodoEnvironment,
 ): Promise<{ zenodoId: number; bucketUrl: string }> {
+  await throttle(environment)
   const { data } = await axios.post(
     `${BASE_URL[environment]}/deposit/depositions`,
     {},
@@ -111,6 +111,7 @@ async function setZenodoMetadata(
   zenodoId: number,
   metadata: PublishMetadata,
 ): Promise<void> {
+  await throttle(environment)
   await axios.put(
     `${BASE_URL[environment]}/deposit/depositions/${zenodoId}`,
     {
@@ -156,6 +157,7 @@ async function publishZenodoDeposition(
   environment: ZenodoEnvironment,
   zenodoId: number,
 ): Promise<string> {
+  await throttle(environment)
   const { data } = await axios.post(
     `${BASE_URL[environment]}/deposit/depositions/${zenodoId}/actions/publish`,
     {},
@@ -197,17 +199,18 @@ export interface PublishStudyOptions {
   metadata: PublishMetadata
   userId: number
   ip: string
+  forceLargeUpload?: boolean
 }
 
 export interface PublishStudyResult {
   depositionId: number
   doi: string
   filesUploaded: number
-  largeSizeWarning: boolean
+  totalBytes: number
 }
 
 export async function publishStudy(opts: PublishStudyOptions): Promise<PublishStudyResult> {
-  const { orthancStudyId, environment, metadata, userId, ip } = opts
+  const { orthancStudyId, environment, metadata, userId, ip, forceLargeUpload = false } = opts
 
   // Verify study exists and is anonymized
   const { rows: studyRows } = await pool.query<{
@@ -254,7 +257,12 @@ export async function publishStudy(opts: PublishStudyOptions): Promise<PublishSt
     }
   }
 
-  const largeSizeWarning = totalSize > FIFTY_GB
+  if (totalSize > FIFTY_GB && !forceLargeUpload) {
+    throw new ZenodoPublishError(
+      `El dataset ocupa ${(totalSize / (1024 ** 3)).toFixed(1)} GB, lo que supera el límite de 50 GB por depósito. Envía force_large_upload: true para continuar de todas formas.`,
+      'file_too_large',
+    )
+  }
 
   // Create Zenodo deposition
   const { zenodoId, bucketUrl } = await withRetry(() =>
@@ -371,7 +379,7 @@ export async function publishStudy(opts: PublishStudyOptions): Promise<PublishSt
     client.release()
   }
 
-  return { depositionId, doi, filesUploaded, largeSizeWarning }
+  return { depositionId, doi, filesUploaded, totalBytes: totalSize }
 }
 
 export async function retryFailedFiles(

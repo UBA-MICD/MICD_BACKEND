@@ -15,6 +15,11 @@ jest.mock('../audit.service', () => ({
     ZENODO_IMPORT_COMPLETED: 'ZENODO_IMPORT_COMPLETED',
   },
 }))
+jest.mock('../zenodo-rate-limit.service', () => ({
+  throttle: jest.fn().mockResolvedValue(undefined),
+  THROTTLE_AT: 50,
+  FIFTY_GB: 50 * 1024 * 1024 * 1024,
+}))
 
 const mockedAxios = axios as jest.Mocked<typeof axios>
 const poolQuery = pool.query as jest.Mock

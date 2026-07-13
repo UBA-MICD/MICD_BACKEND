@@ -7,6 +7,11 @@ jest.mock('../zenodo.service', () => ({
   getStoredToken: jest.fn(),
   ZENODO_ENVIRONMENTS: ['sandbox', 'production'],
 }))
+jest.mock('../zenodo-rate-limit.service', () => ({
+  throttle: jest.fn().mockResolvedValue(undefined),
+  THROTTLE_AT: 50,
+  FIFTY_GB: 50 * 1024 * 1024 * 1024,
+}))
 
 const mockedAxios = axios as jest.Mocked<typeof axios>
 const mockedGetStoredToken = zenodoService.getStoredToken as jest.Mock

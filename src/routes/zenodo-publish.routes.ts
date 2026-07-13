@@ -62,6 +62,8 @@ router.post('/publish', async (req, res) => {
     return
   }
 
+  const { force_large_upload } = req.body ?? {}
+
   try {
     const result = await publishStudy({
       orthancStudyId: orthanc_study_id,
@@ -69,15 +71,14 @@ router.post('/publish', async (req, res) => {
       metadata: { title, description, authors, license, keywords },
       userId: user.id,
       ip: ip ?? '',
+      forceLargeUpload: force_large_upload === true,
     })
 
     res.status(201).json({
       deposition_id: result.depositionId,
       doi: result.doi,
       files_uploaded: result.filesUploaded,
-      ...(result.largeSizeWarning
-        ? { warning: 'El dataset supera los 50 GB. La subida puede tardar significativamente.' }
-        : {}),
+      total_bytes: result.totalBytes,
     })
   } catch (err: unknown) {
     if (err instanceof ZenodoPublishError) {
@@ -86,7 +87,9 @@ router.post('/publish', async (req, res) => {
           ? 404
           : err.code === 'not_anonymized' || err.code === 'no_credentials'
             ? 422
-            : 400
+            : err.code === 'file_too_large'
+              ? 413
+              : 400
       res.status(status).json({ error: err.message, code: err.code })
       return
     }

@@ -2,6 +2,7 @@ import axios from 'axios'
 import { pool } from '../db'
 import { type ZenodoEnvironment, getStoredToken } from './zenodo.service'
 import { AUDIT_ACTIONS } from './audit.service'
+import { throttle } from './zenodo-rate-limit.service'
 
 const TEN_GB = 10 * 1024 * 1024 * 1024
 
@@ -132,6 +133,7 @@ export async function fetchRecordMeta(
   try {
     const headers: Record<string, string> = {}
     if (token) headers['Authorization'] = `Bearer ${token}`
+    await throttle(environment)
     const { data } = await axios.get(`${BASE_URL[environment]}/records/${recordId}`, {
       headers,
       timeout: parseInt(process.env.ZENODO_TIMEOUT_MS ?? '10000', 10),

@@ -2,6 +2,7 @@ import axios from 'axios'
 import { pool } from '../db'
 import { type ZenodoEnvironment, getStoredToken } from './zenodo.service'
 import { fetchRecordMeta } from './zenodo-import.service'
+import { throttle } from './zenodo-rate-limit.service'
 
 const VALID_INTERVALS = [6, 12, 24, 168] as const
 export type SyncInterval = (typeof VALID_INTERVALS)[number]
@@ -32,10 +33,6 @@ export interface SyncResult {
 
 export function isValidInterval(value: unknown): value is SyncInterval {
   return typeof value === 'number' && (VALID_INTERVALS as readonly number[]).includes(value)
-}
-
-async function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 export async function getSyncConfig(): Promise<SyncConfig> {
@@ -100,6 +97,7 @@ async function detectNewVersion(
     const headers: Record<string, string> = {}
     if (token) headers['Authorization'] = `Bearer ${token}`
 
+    await throttle('production')
     const { data } = await axios.get(
       `https://zenodo.org/api/records/${record.record_id}`,
       { headers, timeout: parseInt(process.env.ZENODO_TIMEOUT_MS ?? '10000', 10) },
@@ -158,9 +156,6 @@ export async function runSync(): Promise<SyncResult> {
       } catch {
         errors++
       }
-
-      // Respect Zenodo rate limit: 1 request per second = 60 req/min
-      if (recordsChecked < records.length) await sleep(1000)
     }
 
     await pool.query(

@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { type ZenodoEnvironment, getStoredToken } from './zenodo.service'
+import { throttle } from './zenodo-rate-limit.service'
 
 const BASE_URL: Record<ZenodoEnvironment, string> = {
   sandbox: 'https://sandbox.zenodo.org/api',
@@ -136,6 +137,7 @@ export async function searchZenodo(
   const headers: Record<string, string> = {}
   if (token) headers['Authorization'] = `Bearer ${token}`
 
+  await throttle(environment)
   const { data } = await axios.get(`${BASE_URL[environment]}/records`, {
     params,
     headers,
@@ -162,6 +164,7 @@ export async function getZenodoRecord(
   const headers: Record<string, string> = {}
   if (token) headers['Authorization'] = `Bearer ${token}`
 
+  await throttle(environment)
   const { data } = await axios.get(`${BASE_URL[environment]}/records/${recordId}`, {
     headers,
     timeout: parseInt(process.env.ZENODO_TIMEOUT_MS ?? '10000', 10),
