@@ -24,6 +24,7 @@ docker compose up --build
 ```
 
 Esperar hasta ver en los logs:
+
 ```
 micd-backend   | MICD backend listening on port 3000
 micd-orthanc   | Orthanc has started
@@ -56,6 +57,7 @@ curl http://localhost:3000/api/health
 ```
 
 Respuesta esperada:
+
 ```json
 { "status": "ok", "orthanc": "1.12.x" }
 ```
@@ -67,6 +69,7 @@ Si Orthanc no está listo aún puede devolver `"status": "degraded"` — esperar
 ## 4. Interfaz web de Orthanc
 
 Abrir en el browser:
+
 ```
 http://localhost:8042
 ```
@@ -92,6 +95,7 @@ done
 ```
 
 Respuesta esperada por cada archivo:
+
 ```json
 {
   "ID": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
@@ -110,6 +114,7 @@ curl http://localhost:3000/api/studies
 ```
 
 Debe devolver un array con el ID del estudio recién subido:
+
 ```json
 ["xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"]
 ```
@@ -171,6 +176,7 @@ docker compose up
 ```
 
 Verificar que el stack levanta con los nuevos puertos:
+
 ```bash
 curl http://localhost:3001/api/health
 curl http://localhost:8043/system -u orthanc:orthanc
@@ -192,10 +198,10 @@ El tiempo total de build + startup debe ser menor a 3 minutos.
 
 ## Criterios de aceptación cubiertos
 
-| Criterio | Cómo verificarlo |
-|----------|-----------------|
-| `docker compose up --build` levanta todo sin errores | Sección 1 y 2 |
-| Todos los servicios levantan en < 3 min | Sección 9 |
-| Datos persisten entre reinicios | Sección 7 |
+| Criterio                                                        | Cómo verificarlo                  |
+| --------------------------------------------------------------- | --------------------------------- |
+| `docker compose up --build` levanta todo sin errores            | Sección 1 y 2                     |
+| Todos los servicios levantan en < 3 min                         | Sección 9                         |
+| Datos persisten entre reinicios                                 | Sección 7                         |
 | Nuevo dev: `cp .env.example .env && docker compose up` funciona | Sección 1 (sin pasos adicionales) |
-| Puerto 5432 ya ocupado → parametrizar en .env | Sección 8 |
+| Puerto 5432 ya ocupado → parametrizar en .env                   | Sección 8                         |

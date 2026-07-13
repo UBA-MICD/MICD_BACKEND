@@ -38,7 +38,10 @@ export function orderInstances<T extends InstanceRow>(rows: readonly T[]): T[] {
 }
 
 /** Build the API payload for GET /studies/:studyId/instances. */
-export function buildInstancesPayload(studyId: string, rows: readonly InstanceRow[]): InstancesPayload {
+export function buildInstancesPayload(
+  studyId: string,
+  rows: readonly InstanceRow[],
+): InstancesPayload {
   const ordered = orderInstances(rows);
   return {
     studyId,

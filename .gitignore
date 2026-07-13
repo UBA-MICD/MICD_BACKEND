@@ -36,3 +36,11 @@ docker-compose.override.yml
 
 # ── Local data ────────────────────────────────────────────────────────────────
 .data
+
+#Database files
+data/staging/dicom/
+
+# pycache/
+__pycache__/
+*.pyc
+*.pyo

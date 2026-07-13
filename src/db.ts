@@ -1,12 +1,12 @@
-import { Pool } from 'pg'
+import { Pool } from "pg";
 
 export const pool = new Pool({
-  host: process.env.DB_HOST ?? 'postgres',
-  port: parseInt(process.env.DB_PORT ?? '5432', 10),
-  database: process.env.DB_NAME ?? 'micd',
-  user: process.env.DB_USER ?? 'micd',
-  password: process.env.DB_PASSWORD ?? 'micd',
-})
+  host: process.env.DB_HOST ?? "postgres",
+  port: parseInt(process.env.DB_PORT ?? "5432", 10),
+  database: process.env.DB_NAME ?? "micd",
+  user: process.env.DB_USER ?? "micd",
+  password: process.env.DB_PASSWORD ?? "micd",
+});
 
 export async function initDb(): Promise<void> {
   await pool.query(`
