@@ -63,7 +63,11 @@ services:
       ORTHANC_URL: http://orthanc:8042
       ORTHANC_USERNAME: ${ORTHANC_USERNAME:-orthanc}
       ORTHANC_PASSWORD: ${ORTHANC_PASSWORD:-orthanc}
-      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET must be set in .env}
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
+      JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-7d}
+      BCRYPT_ROUNDS: ${BCRYPT_ROUNDS:-12}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       ZENODO_TIMEOUT_MS: ${ZENODO_TIMEOUT_MS:-10000}
     depends_on:

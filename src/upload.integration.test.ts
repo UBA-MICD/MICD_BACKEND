@@ -7,6 +7,7 @@ import fs from "fs";
 import path from "path";
 import axios from "axios";
 import FormData from "form-data";
+import { getAuthHeader } from "./test-utils/auth";
 
 const BASE_URL = process.env.BACKEND_URL ?? "http://localhost:3000";
 const SAMPLE_DCM = path.resolve(
@@ -27,11 +28,13 @@ function makeInvalidFile(): Buffer {
 }
 
 let backendAvailable = false;
+let authHeader: { Authorization: string } = { Authorization: "" };
 
 beforeAll(async () => {
   try {
     await axios.get(`${BASE_URL}/api/health`, { timeout: 3000 });
     backendAvailable = true;
+    authHeader = await getAuthHeader();
   } catch {
     console.warn("Backend not reachable — skipping upload integration tests");
   }
@@ -41,7 +44,7 @@ describe("POST /api/v1/studies/upload", () => {
   it("rejects request with no file → 400", async () => {
     if (!backendAvailable) return;
     await expect(
-      axios.post(`${BASE_URL}/api/v1/studies/upload`),
+      axios.post(`${BASE_URL}/api/v1/studies/upload`, undefined, { headers: authHeader }),
     ).rejects.toMatchObject({ response: { status: 400 } });
   });
 
@@ -55,7 +58,7 @@ describe("POST /api/v1/studies/upload", () => {
 
     await expect(
       axios.post(`${BASE_URL}/api/v1/studies/upload`, form, {
-        headers: form.getHeaders(),
+        headers: { ...form.getHeaders(), ...authHeader },
       }),
     ).rejects.toMatchObject({
       response: {
@@ -88,7 +91,7 @@ describe("POST /api/v1/studies/upload", () => {
     }
 
     // Clean up any existing record to avoid false duplicate
-    await axios.delete(`${BASE_URL}/api/v1/studies/upload`).catch(() => {}); // endpoint doesn't exist, just cleanup attempt
+    await axios.delete(`${BASE_URL}/api/v1/studies/upload`, { headers: authHeader }).catch(() => {}); // endpoint doesn't exist, just cleanup attempt
 
     const form = new FormData();
     form.append("file", fs.createReadStream(SAMPLE_DCM), {
@@ -98,7 +101,7 @@ describe("POST /api/v1/studies/upload", () => {
     let res: any;
     try {
       res = await axios.post(`${BASE_URL}/api/v1/studies/upload`, form, {
-        headers: form.getHeaders(),
+        headers: { ...form.getHeaders(), ...authHeader },
       });
     } catch (err: any) {
       // If already stored from previous test run, that's ok — test duplicate path
@@ -128,7 +131,7 @@ describe("POST /api/v1/studies/upload", () => {
 
     await expect(
       axios.post(`${BASE_URL}/api/v1/studies/upload`, form, {
-        headers: form.getHeaders(),
+        headers: { ...form.getHeaders(), ...authHeader },
       }),
     ).rejects.toMatchObject({
       response: {
@@ -154,14 +157,14 @@ describe("POST /api/v1/studies/upload", () => {
     const res = await axios.post(
       `${BASE_URL}/api/v1/studies/upload?force=true`,
       form,
-      { headers: form.getHeaders() },
+      { headers: { ...form.getHeaders(), ...authHeader } },
     );
     expect(res.status).toBe(201);
   });
 
   it("GET /api/v1/studies returns paginated response with uploaded study", async () => {
     if (!backendAvailable) return;
-    const { data } = await axios.get(`${BASE_URL}/api/v1/studies`);
+    const { data } = await axios.get(`${BASE_URL}/api/v1/studies`, { headers: authHeader });
     expect(data).toHaveProperty("studies");
     expect(data).toHaveProperty("total");
     expect(data).toHaveProperty("page");
