@@ -45,7 +45,7 @@ export const loginHandler: RequestHandler = async (req, res) => {
   const user = await findUserByEmail(email);
   const passwordOk = await verifyPassword(
     password,
-    user?.password_hash ?? DUMMY_HASH,
+    user?.password ?? DUMMY_HASH,
   );
   // Same generic response whether the email is unknown or the password is
   // wrong — don't let a client distinguish which one failed.
@@ -54,18 +54,14 @@ export const loginHandler: RequestHandler = async (req, res) => {
     return;
   }
 
-  const accessToken = signAccessToken({
-    sub: user.id,
-    email: user.email,
-    role: user.role,
-  });
+  const accessToken = signAccessToken({ sub: user.id, email: user.email });
   const refreshToken = signRefreshToken({ sub: user.id });
   await storeRefreshToken(user.id, refreshToken, getTokenExpiry(refreshToken));
 
   res.status(200).json({
     accessToken,
     refreshToken,
-    user: { id: user.id, email: user.email, role: user.role },
+    user: { id: user.id, email: user.email },
   });
 };
 
@@ -99,11 +95,7 @@ export const refreshHandler: RequestHandler = async (req, res) => {
     return;
   }
 
-  const newAccessToken = signAccessToken({
-    sub: user.id,
-    email: user.email,
-    role: user.role,
-  });
+  const newAccessToken = signAccessToken({ sub: user.id, email: user.email });
   const newRefreshToken = signRefreshToken({ sub: user.id });
   await storeRefreshToken(
     user.id,

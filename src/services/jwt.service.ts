@@ -20,7 +20,6 @@ if (
 export interface AccessTokenPayload {
   sub: number;
   email: string;
-  role: "admin" | "user";
 }
 
 export interface RefreshTokenPayload {

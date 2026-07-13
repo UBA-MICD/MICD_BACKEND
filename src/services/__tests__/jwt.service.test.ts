@@ -5,7 +5,7 @@ import {
   verifyRefreshToken,
 } from "../jwt.service";
 
-const PAYLOAD = { sub: 1, email: "user@micd.local", role: "user" as const };
+const PAYLOAD = { sub: 1, email: "user@micd.local" };
 
 describe("jwt.service — access tokens", () => {
   it("signs and verifies a valid access token", () => {
@@ -13,7 +13,6 @@ describe("jwt.service — access tokens", () => {
     const decoded = verifyAccessToken(token);
     expect(decoded.sub).toBe(PAYLOAD.sub);
     expect(decoded.email).toBe(PAYLOAD.email);
-    expect(decoded.role).toBe(PAYLOAD.role);
   });
 
   it("rejects a token signed with a different secret (tampered)", () => {

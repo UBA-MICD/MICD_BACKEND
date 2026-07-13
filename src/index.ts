@@ -13,7 +13,6 @@ import {
   refreshHandler,
   logoutHandler,
 } from "./auth";
-import { seedAdminUser } from "./services/user.service";
 import { openapiSpec } from "./openapi";
 
 const app = express();
@@ -305,7 +304,6 @@ app.post("/api/instances", requireAuth, upload.single("file"), uploadStudy);
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 initDb()
-  .then(seedAdminUser)
   .then(() => {
     app.listen(PORT, () =>
       console.log(`MICD backend listening on port ${PORT}`),

@@ -1,15 +1,14 @@
 /**
  * Integration tests for POST /auth/login, /auth/refresh, /auth/logout
- * Requires the backend + DB to be running with the seeded admin user
- * (ADMIN_EMAIL / ADMIN_PASSWORD from .env).
+ * Requires the backend + DB to be running with the seeded test user
+ * (test@micd.local / testpassword, created by the migration in src/db.ts).
  * Run: npm run test:integration
  */
 import axios from "axios";
 
 const BASE_URL = process.env.BACKEND_URL ?? "http://localhost:3000";
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? "admin@micd.local";
-const ADMIN_PASSWORD =
-  process.env.ADMIN_PASSWORD ?? "change-me-admin-password";
+const TEST_EMAIL = process.env.TEST_USER_EMAIL ?? "test@micd.local";
+const TEST_PASSWORD = process.env.TEST_USER_PASSWORD ?? "testpassword";
 
 let backendAvailable = false;
 
@@ -26,13 +25,13 @@ describe("POST /auth/login", () => {
   it("returns 200 with access + refresh tokens for correct credentials", async () => {
     if (!backendAvailable) return;
     const { status, data } = await axios.post(`${BASE_URL}/auth/login`, {
-      email: ADMIN_EMAIL,
-      password: ADMIN_PASSWORD,
+      email: TEST_EMAIL,
+      password: TEST_PASSWORD,
     });
     expect(status).toBe(200);
     expect(typeof data.accessToken).toBe("string");
     expect(typeof data.refreshToken).toBe("string");
-    expect(data.user).toMatchObject({ email: ADMIN_EMAIL });
+    expect(data.user).toMatchObject({ email: TEST_EMAIL });
   });
 
   // Counts as 1 of the 5 failed attempts allowed before the IP is blocked —
@@ -42,7 +41,7 @@ describe("POST /auth/login", () => {
     if (!backendAvailable) return;
     await expect(
       axios.post(`${BASE_URL}/auth/login`, {
-        email: ADMIN_EMAIL,
+        email: TEST_EMAIL,
         password: "definitely-wrong",
       }),
     ).rejects.toMatchObject({ response: { status: 401 } });
@@ -55,7 +54,7 @@ describe("POST /auth/login", () => {
     let unknownEmailError: any;
     try {
       await axios.post(`${BASE_URL}/auth/login`, {
-        email: ADMIN_EMAIL,
+        email: TEST_EMAIL,
         password: "definitely-wrong-2",
       });
     } catch (err) {
@@ -79,7 +78,7 @@ describe("POST /auth/login", () => {
   it("returns 400 when email or password is missing", async () => {
     if (!backendAvailable) return;
     await expect(
-      axios.post(`${BASE_URL}/auth/login`, { email: ADMIN_EMAIL }),
+      axios.post(`${BASE_URL}/auth/login`, { email: TEST_EMAIL }),
     ).rejects.toMatchObject({ response: { status: 400 } });
   });
 });
@@ -97,7 +96,7 @@ describe("protected data endpoints", () => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { signAccessToken } = require("./services/jwt.service");
     const expired = signAccessToken(
-      { sub: 1, email: ADMIN_EMAIL, role: "admin" },
+      { sub: 1, email: TEST_EMAIL },
       { expiresIn: "-1s" },
     );
     await expect(
@@ -110,8 +109,8 @@ describe("protected data endpoints", () => {
   it("returns 200 with a valid access token", async () => {
     if (!backendAvailable) return;
     const { data: login } = await axios.post(`${BASE_URL}/auth/login`, {
-      email: ADMIN_EMAIL,
-      password: ADMIN_PASSWORD,
+      email: TEST_EMAIL,
+      password: TEST_PASSWORD,
     });
     const { status } = await axios.get(`${BASE_URL}/api/v1/studies`, {
       headers: { Authorization: `Bearer ${login.accessToken}` },
@@ -124,8 +123,8 @@ describe("POST /auth/refresh", () => {
   it("rotates tokens: old refresh token stops working after refresh", async () => {
     if (!backendAvailable) return;
     const { data: login } = await axios.post(`${BASE_URL}/auth/login`, {
-      email: ADMIN_EMAIL,
-      password: ADMIN_PASSWORD,
+      email: TEST_EMAIL,
+      password: TEST_PASSWORD,
     });
 
     const { status, data: refreshed } = await axios.post(
@@ -159,8 +158,8 @@ describe("POST /auth/logout", () => {
   it("invalidates the refresh token so a subsequent refresh fails", async () => {
     if (!backendAvailable) return;
     const { data: login } = await axios.post(`${BASE_URL}/auth/login`, {
-      email: ADMIN_EMAIL,
-      password: ADMIN_PASSWORD,
+      email: TEST_EMAIL,
+      password: TEST_PASSWORD,
     });
 
     const logoutRes = await axios.post(`${BASE_URL}/auth/logout`, {
@@ -187,7 +186,7 @@ describe("login rate limiting", () => {
     for (let i = 0; i < 5; i++) {
       try {
         await axios.post(`${BASE_URL}/auth/login`, {
-          email: ADMIN_EMAIL,
+          email: TEST_EMAIL,
           password: `still-wrong-${i}`,
         });
       } catch (err: any) {

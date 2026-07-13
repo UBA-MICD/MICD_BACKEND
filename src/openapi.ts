@@ -533,7 +533,6 @@ export const openapiSpec = {
         properties: {
           id: { type: "integer" },
           email: { type: "string", format: "email" },
-          role: { type: "string", example: "admin" },
         },
       },
       TokenPair: {
