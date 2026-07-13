@@ -30,6 +30,8 @@
     "togglefullscreen",
     "ilike",
     "repr",
-    "navigations"
+    "navigations",
+    "pydicom",
+    "seeder"
   ]
 }
