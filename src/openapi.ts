@@ -2,8 +2,9 @@
  * openapi.ts — OpenAPI 3.0 specification for the MICD backend.
  *
  * Served by swagger-ui-express at /api/docs (interactive UI) and
- * /api/docs/openapi.json (raw spec). Kept as a plain object so it needs no
- * build step and stays in sync with the handlers in index.ts by review.
+ * /api/docs/openapi.json (raw spec), wired up in app.ts. Kept as a plain
+ * object so it needs no build step and stays in sync with the route handlers
+ * under src/modules by review.
  */
 
 const errorResponse = (description: string) => ({
