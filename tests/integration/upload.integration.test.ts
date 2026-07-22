@@ -7,12 +7,12 @@ import fs from "fs";
 import path from "path";
 import axios from "axios";
 import FormData from "form-data";
-import { getAuthHeader } from "./test-utils/auth";
+import { getAuthHeader } from "../helpers/auth";
 
 const BASE_URL = process.env.BACKEND_URL ?? "http://localhost:3000";
 const SAMPLE_DCM = path.resolve(
   __dirname,
-  "../.data.example/series-000001/image-000001.dcm",
+  "../../.data.example/series-000001/image-000001.dcm",
 );
 
 // A minimal valid DICOM preamble (128 zero bytes + 'DICM')

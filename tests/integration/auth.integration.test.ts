@@ -1,7 +1,7 @@
 /**
  * Integration tests for POST /auth/login, /auth/refresh, /auth/logout
  * Requires the backend + DB to be running with the seeded test user
- * (test@micd.local / testpassword, created by the migration in src/db.ts).
+ * (test@micd.local / testpassword, created by migration 002).
  * Run: npm run test:integration
  */
 import axios from "axios";
@@ -94,7 +94,7 @@ describe("protected data endpoints", () => {
   it("returns 401 for an expired access token", async () => {
     if (!backendAvailable) return;
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { signAccessToken } = require("./services/jwt.service");
+    const { signAccessToken } = require("../../src/modules/auth/jwt.service");
     const expired = signAccessToken(
       { sub: 1, email: TEST_EMAIL },
       { expiresIn: "-1s" },

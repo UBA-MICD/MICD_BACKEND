@@ -6,7 +6,7 @@ import {
   orderInstances,
   buildInstancesPayload,
   type InstanceRow,
-} from "./instances-util";
+} from "../../src/shared/instances-util";
 
 const row = (
   id: number,

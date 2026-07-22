@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
-import { requireAuth } from "./auth-middleware";
-import { signAccessToken } from "./services/jwt.service";
+import { requireAuth } from "../../src/middleware/auth.middleware";
+import { signAccessToken } from "../../src/modules/auth/jwt.service";
 
 const PAYLOAD = { sub: 1, email: "user@micd.local" };
 

@@ -3,7 +3,7 @@ import {
   verifyAccessToken,
   signRefreshToken,
   verifyRefreshToken,
-} from "../jwt.service";
+} from "../../../src/modules/auth/jwt.service";
 
 const PAYLOAD = { sub: 1, email: "user@micd.local" };
 

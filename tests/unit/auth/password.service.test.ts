@@ -1,4 +1,7 @@
-import { hashPassword, verifyPassword } from '../password.service'
+import {
+  hashPassword,
+  verifyPassword,
+} from '../../../src/modules/auth/password.service'
 
 describe('password.service', () => {
   it('hashPassword never returns the plaintext password', async () => {

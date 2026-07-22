@@ -4,7 +4,7 @@
  * Run: npm run test:integration
  */
 import axios from "axios";
-import { getAuthHeader } from "./test-utils/auth";
+import { getAuthHeader } from "../helpers/auth";
 
 const BASE_URL = process.env.BACKEND_URL ?? "http://localhost:3000";
 

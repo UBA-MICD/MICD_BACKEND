@@ -22,7 +22,7 @@ const client = axios.create({
 
 const SAMPLE_DICOM = path.resolve(
   __dirname,
-  "../.data.example/series-000001/image-000001.dcm",
+  "../../.data.example/series-000001/image-000001.dcm",
 );
 
 // Skip all tests if Orthanc is not reachable
