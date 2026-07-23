@@ -3,6 +3,7 @@ import { app } from "./app";
 import { serverConfig } from "./config/env";
 import { runMigrations } from "./db/migrate";
 import { checkAllEnvironments } from "./modules/zenodo/zenodo.service";
+import { shouldRunSync, runSync } from "./modules/zenodo/zenodo-sync.service";
 
 /**
  * Process entry point: apply migrations (which also seed the shared test user)
@@ -25,6 +26,15 @@ runMigrations()
       checkAllEnvironments().catch((err) =>
         console.error("Zenodo health check failed:", err.message),
       );
+    });
+
+    // ZEN-10: check every 30 min whether it's time to sync metadata
+    cron.schedule("*/30 * * * *", () => {
+      shouldRunSync()
+        .then((should) => {
+          if (should) return runSync();
+        })
+        .catch((err) => console.error("Zenodo metadata sync failed:", err.message));
     });
   })
   .catch((err) => {

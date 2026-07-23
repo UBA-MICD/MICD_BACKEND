@@ -95,6 +95,32 @@ export const migration003 = {
       uploaded_at         TIMESTAMPTZ
     );
 
+    -- Periodic metadata sync (ZEN-10)
+    ALTER TABLE studies ADD COLUMN IF NOT EXISTS zenodo_new_version_available BOOLEAN DEFAULT FALSE;
+
+    -- sync scheduler config (singleton row, id=1)
+    CREATE TABLE IF NOT EXISTS zenodo_sync_config (
+      id             INTEGER PRIMARY KEY DEFAULT 1,
+      interval_hours INTEGER,  -- NULL = disabled; valid: 6, 12, 24, 168
+      last_run_at    TIMESTAMPTZ,
+      updated_at     TIMESTAMPTZ DEFAULT NOW()
+    );
+    INSERT INTO zenodo_sync_config (id, interval_hours)
+    VALUES (1, 24)
+    ON CONFLICT (id) DO NOTHING;
+
+    -- audit log of each sync run
+    CREATE TABLE IF NOT EXISTS zenodo_sync_log (
+      id               SERIAL PRIMARY KEY,
+      started_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      completed_at     TIMESTAMPTZ,
+      status           TEXT CHECK (status IN ('running', 'completed', 'failed')),
+      records_checked  INTEGER NOT NULL DEFAULT 0,
+      new_versions     INTEGER NOT NULL DEFAULT 0,
+      errors           INTEGER NOT NULL DEFAULT 0,
+      error_detail     TEXT
+    );
+
     -- Import from Zenodo (ZEN-07)
     -- Zenodo import origin badge
     ALTER TABLE studies ADD COLUMN IF NOT EXISTS zenodo_source_record_id INTEGER;

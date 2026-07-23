@@ -24,6 +24,12 @@ zenodoRouter.get("/health", ctrl.getHealth);
 zenodoRouter.get("/search", ctrl.search);
 zenodoRouter.get("/records/:recordId", ctrl.getRecordDetail);
 
+// ── Periodic metadata sync (ZEN-10) ──────────────────────────────────────────
+zenodoRouter.get("/config/sync", ctrl.getSyncConfiguration);
+zenodoRouter.put("/config/sync", ctrl.setSyncConfiguration);
+zenodoRouter.post("/config/sync/run", ctrl.runSyncNow);
+zenodoRouter.get("/config/sync/logs", ctrl.getSyncLogList);
+
 // ── Import (ZEN-07) ──────────────────────────────────────────────────────────
 zenodoRouter.post("/import", ctrl.importRecord);
 zenodoRouter.get("/imports/:importId", ctrl.getImportStatus);
