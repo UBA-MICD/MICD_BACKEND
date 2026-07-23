@@ -30,6 +30,28 @@ export const zenodoClient = {
       timeout: zenodoTimeouts.requestMs,
     }),
 
+  // ── Records (search/detail, ZEN-06) ─────────────────────────────────────────
+  searchRecords: (
+    params: Record<string, string | number>,
+    token: string | null,
+    environment: ZenodoEnvironment,
+  ): Promise<AxiosResponse> =>
+    axios.get(`${API_BASE[environment]}/records`, {
+      params,
+      headers: bearer(token),
+      timeout: zenodoTimeouts.requestMs,
+    }),
+
+  getRecord: (
+    recordId: number,
+    token: string | null,
+    environment: ZenodoEnvironment,
+  ): Promise<AxiosResponse> =>
+    axios.get(`${API_BASE[environment]}/records/${recordId}`, {
+      headers: bearer(token),
+      timeout: zenodoTimeouts.requestMs,
+    }),
+
   // ── Depositions (publish flow, ZEN-05) ──────────────────────────────────────
   createDeposition: (token: string, environment: ZenodoEnvironment): Promise<AxiosResponse> =>
     axios.post(
