@@ -1,0 +1,59 @@
+import { pool } from "../../db/pool";
+import { type ZenodoEnvironment } from "./zenodo.service";
+
+// Pause new requests when we've made this many in the last 60 seconds.
+// Zenodo allows 60/min authenticated, 30/min anonymous — 50 gives a safe margin.
+export const THROTTLE_AT = 50;
+export const FIFTY_GB = 50 * 1024 * 1024 * 1024;
+
+const WINDOW_MS = 60_000;
+
+async function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function pruneOldRequests(): Promise<void> {
+  await pool.query(
+    "DELETE FROM zenodo_api_requests WHERE requested_at < NOW() - INTERVAL '60 seconds'",
+  );
+}
+
+export async function getRequestCount(environment: ZenodoEnvironment): Promise<number> {
+  const { rows } = await pool.query<{ count: string }>(
+    `SELECT COUNT(*) AS count
+     FROM zenodo_api_requests
+     WHERE environment = $1 AND requested_at > NOW() - INTERVAL '60 seconds'`,
+    [environment],
+  );
+  return parseInt(rows[0].count, 10);
+}
+
+async function recordRequest(environment: ZenodoEnvironment): Promise<void> {
+  await pool.query("INSERT INTO zenodo_api_requests (environment) VALUES ($1)", [environment]);
+}
+
+/**
+ * Call this before every Zenodo API request.
+ * If the sliding-window counter is at or above THROTTLE_AT (50/min),
+ * sleeps until the oldest request in the window expires, then records the new request.
+ */
+export async function throttle(environment: ZenodoEnvironment): Promise<void> {
+  await pruneOldRequests();
+
+  const count = await getRequestCount(environment);
+  if (count >= THROTTLE_AT) {
+    const { rows } = await pool.query<{ oldest: Date }>(
+      `SELECT MIN(requested_at) AS oldest
+       FROM zenodo_api_requests
+       WHERE environment = $1 AND requested_at > NOW() - INTERVAL '60 seconds'`,
+      [environment],
+    );
+    if (rows[0]?.oldest) {
+      const expiresAt = new Date(rows[0].oldest.getTime() + WINDOW_MS);
+      const waitMs = Math.max(0, expiresAt.getTime() - Date.now()) + 100;
+      await sleep(waitMs);
+    }
+  }
+
+  await recordRequest(environment);
+}

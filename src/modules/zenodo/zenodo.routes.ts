@@ -19,3 +19,8 @@ zenodoRouter.delete("/config/:environment", ctrl.removeConfig);
 
 // ── Panel state (ZEN-02): connection health per environment ──────────────────
 zenodoRouter.get("/health", ctrl.getHealth);
+
+// ── Publish (ZEN-05) ─────────────────────────────────────────────────────────
+zenodoRouter.post("/publish", ctrl.publish);
+zenodoRouter.get("/depositions/:depositionId", ctrl.getDepositionStatus);
+zenodoRouter.post("/depositions/:depositionId/retry", ctrl.retryDeposition);

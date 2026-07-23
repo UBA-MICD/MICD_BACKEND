@@ -29,4 +29,49 @@ export const zenodoClient = {
       params: { size: 1, access_token: token },
       timeout: zenodoTimeouts.requestMs,
     }),
+
+  // ── Depositions (publish flow, ZEN-05) ──────────────────────────────────────
+  createDeposition: (token: string, environment: ZenodoEnvironment): Promise<AxiosResponse> =>
+    axios.post(
+      `${API_BASE[environment]}/deposit/depositions`,
+      {},
+      {
+        headers: { ...bearer(token), "Content-Type": "application/json" },
+        timeout: zenodoTimeouts.requestMs,
+      },
+    ),
+
+  setDepositionMetadata: (
+    token: string,
+    environment: ZenodoEnvironment,
+    zenodoId: number,
+    body: Record<string, unknown>,
+  ): Promise<AxiosResponse> =>
+    axios.put(`${API_BASE[environment]}/deposit/depositions/${zenodoId}`, body, {
+      headers: { ...bearer(token), "Content-Type": "application/json" },
+      timeout: zenodoTimeouts.requestMs,
+    }),
+
+  uploadFileToBucket: (
+    token: string,
+    bucketUrl: string,
+    filename: string,
+    data: Buffer,
+  ): Promise<AxiosResponse> =>
+    axios.put(`${bucketUrl}/${encodeURIComponent(filename)}`, data, {
+      headers: { ...bearer(token), "Content-Type": "application/octet-stream" },
+      maxBodyLength: Infinity,
+      timeout: zenodoTimeouts.uploadMs,
+    }),
+
+  publishDeposition: (
+    token: string,
+    environment: ZenodoEnvironment,
+    zenodoId: number,
+  ): Promise<AxiosResponse> =>
+    axios.post(
+      `${API_BASE[environment]}/deposit/depositions/${zenodoId}/actions/publish`,
+      {},
+      { headers: bearer(token), timeout: zenodoTimeouts.requestMs },
+    ),
 };
