@@ -40,5 +40,17 @@ export const migration003 = {
     );
     CREATE INDEX IF NOT EXISTS idx_audit_log_user_id ON audit_log(user_id);
     CREATE INDEX IF NOT EXISTS idx_audit_log_action  ON audit_log(action);
+
+    -- Panel state (ZEN-02): token expiry hint + health check results
+    ALTER TABLE zenodo_config ADD COLUMN IF NOT EXISTS token_expires_at TIMESTAMPTZ;
+
+    -- Zenodo health check results (one row per environment, upserted on each check)
+    CREATE TABLE IF NOT EXISTS zenodo_health (
+      environment  zenodo_environment PRIMARY KEY,
+      status       TEXT NOT NULL CHECK (status IN ('connected', 'error', 'unconfigured')),
+      error_reason TEXT,
+      last_checked TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_success TIMESTAMPTZ
+    );
   `,
 };

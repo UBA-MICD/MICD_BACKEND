@@ -16,3 +16,6 @@ zenodoRouter.use(requireAuth);
 zenodoRouter.post("/config", ctrl.configureToken);
 zenodoRouter.get("/config/status", ctrl.getConfigStatus);
 zenodoRouter.delete("/config/:environment", ctrl.removeConfig);
+
+// ── Panel state (ZEN-02): connection health per environment ──────────────────
+zenodoRouter.get("/health", ctrl.getHealth);

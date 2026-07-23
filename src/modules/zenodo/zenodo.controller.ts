@@ -55,6 +55,16 @@ export const getConfigStatus: RequestHandler = async (_req, res) => {
   }
 };
 
+export const getHealth: RequestHandler = async (_req, res) => {
+  try {
+    res.json(await zenodoService.getHealthStatus());
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("Error al obtener el estado de salud de Zenodo:", message);
+    res.status(500).json({ error: "Error al obtener el estado de salud" });
+  }
+};
+
 export const removeConfig: RequestHandler = async (req, res) => {
   const { environment } = req.params;
 
