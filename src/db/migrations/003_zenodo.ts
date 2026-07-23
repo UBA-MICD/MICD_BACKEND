@@ -25,5 +25,20 @@ export const migration003 = {
       created_at      TIMESTAMPTZ DEFAULT NOW(),
       updated_at      TIMESTAMPTZ DEFAULT NOW()
     );
+
+    -- Audit trail written by shared/audit.ts. The original branch inserted
+    -- into audit_log without ever creating it, so every audited action
+    -- (token config/removal, publish, import) failed at runtime — this DDL
+    -- fixes that.
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id          SERIAL PRIMARY KEY,
+      user_id     INTEGER REFERENCES users(id),
+      action      TEXT NOT NULL,
+      resource_id TEXT NOT NULL,
+      "timestamp" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      ip          TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_audit_log_user_id ON audit_log(user_id);
+    CREATE INDEX IF NOT EXISTS idx_audit_log_action  ON audit_log(action);
   `,
 };
