@@ -1,12 +1,15 @@
 import axios from "axios";
 import { orthancClient } from "../../../src/clients/orthanc.client";
+import { orthancConfig } from "../../../src/config/env";
 
 jest.mock("axios");
 const mockedAxios = axios as jest.Mocked<typeof axios>;
 
-const AUTH = expect.objectContaining({
-  auth: { username: "orthanc", password: "orthanc" },
-});
+// The client builds URLs and credentials from config (ORTHANC_URL etc.), which
+// differs between local and CI — assert against the same config, never a
+// hardcoded hostname.
+const BASE = orthancConfig.url;
+const AUTH = expect.objectContaining({ auth: orthancConfig.auth });
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -19,32 +22,32 @@ describe("orthancClient", () => {
   it("getSystem probes /system with a short timeout", async () => {
     await orthancClient.getSystem();
     expect(mockedAxios.get).toHaveBeenCalledWith(
-      "http://orthanc:8042/system",
+      `${BASE}/system`,
       expect.objectContaining({ timeout: 3000 }),
     );
   });
 
   it("listStudies / getStudy / deleteStudy hit the studies routes with auth", async () => {
     await orthancClient.listStudies();
-    expect(mockedAxios.get).toHaveBeenCalledWith("http://orthanc:8042/studies", AUTH);
+    expect(mockedAxios.get).toHaveBeenCalledWith(`${BASE}/studies`, AUTH);
 
     await orthancClient.getStudy("s1");
-    expect(mockedAxios.get).toHaveBeenCalledWith("http://orthanc:8042/studies/s1", AUTH);
+    expect(mockedAxios.get).toHaveBeenCalledWith(`${BASE}/studies/s1`, AUTH);
 
     await orthancClient.deleteStudy("s1");
-    expect(mockedAxios.delete).toHaveBeenCalledWith("http://orthanc:8042/studies/s1", AUTH);
+    expect(mockedAxios.delete).toHaveBeenCalledWith(`${BASE}/studies/s1`, AUTH);
   });
 
   it("getInstanceFile and getInstancePreview request arraybuffers", async () => {
     await orthancClient.getInstanceFile("i1");
     expect(mockedAxios.get).toHaveBeenCalledWith(
-      "http://orthanc:8042/instances/i1/file",
+      `${BASE}/instances/i1/file`,
       expect.objectContaining({ responseType: "arraybuffer" }),
     );
 
     await orthancClient.getInstancePreview("i1");
     expect(mockedAxios.get).toHaveBeenCalledWith(
-      "http://orthanc:8042/instances/i1/preview",
+      `${BASE}/instances/i1/preview`,
       expect.objectContaining({ responseType: "arraybuffer" }),
     );
   });
@@ -53,7 +56,7 @@ describe("orthancClient", () => {
     const buf = Buffer.from("DICM");
     await orthancClient.postInstance(buf);
     expect(mockedAxios.post).toHaveBeenCalledWith(
-      "http://orthanc:8042/instances",
+      `${BASE}/instances`,
       buf,
       expect.objectContaining({
         headers: { "Content-Type": "application/dicom" },
@@ -66,7 +69,7 @@ describe("orthancClient", () => {
     const stream = { pipe: jest.fn() } as unknown as NodeJS.ReadableStream;
     await orthancClient.postInstanceStream(stream);
     expect(mockedAxios.post).toHaveBeenCalledWith(
-      "http://orthanc:8042/instances",
+      `${BASE}/instances`,
       stream,
       expect.objectContaining({ maxBodyLength: Infinity, maxContentLength: Infinity }),
     );
@@ -74,9 +77,9 @@ describe("orthancClient", () => {
 
   it("getInstanceTags and deleteInstance hit the instance routes with auth", async () => {
     await orthancClient.getInstanceTags("i1");
-    expect(mockedAxios.get).toHaveBeenCalledWith("http://orthanc:8042/instances/i1/tags", AUTH);
+    expect(mockedAxios.get).toHaveBeenCalledWith(`${BASE}/instances/i1/tags`, AUTH);
 
     await orthancClient.deleteInstance("i1");
-    expect(mockedAxios.delete).toHaveBeenCalledWith("http://orthanc:8042/instances/i1", AUTH);
+    expect(mockedAxios.delete).toHaveBeenCalledWith(`${BASE}/instances/i1`, AUTH);
   });
 });
