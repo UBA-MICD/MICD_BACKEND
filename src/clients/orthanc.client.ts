@@ -42,6 +42,18 @@ export const orthancClient = {
       maxBodyLength: Infinity,
     }),
 
+  /** Like postInstance but accepts a readable stream (Zenodo import pipe). */
+  postInstanceStream: (data: NodeJS.ReadableStream): Promise<AxiosResponse> =>
+    axios.post(`${BASE}/instances`, data, {
+      auth,
+      headers: { "Content-Type": "application/dicom" },
+      maxBodyLength: Infinity,
+      maxContentLength: Infinity,
+    }),
+
   getInstanceTags: (id: string): Promise<AxiosResponse> =>
     axios.get(`${BASE}/instances/${id}/tags`, { auth }),
+
+  deleteInstance: (id: string): Promise<AxiosResponse> =>
+    axios.delete(`${BASE}/instances/${id}`, { auth }),
 };

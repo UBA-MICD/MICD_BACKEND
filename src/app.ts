@@ -6,6 +6,7 @@ import { healthRouter } from "./modules/health/health.routes";
 import { authRouter } from "./modules/auth/auth.routes";
 import { studiesRouter } from "./modules/studies/studies.routes";
 import { uploadRouter } from "./modules/upload/upload.routes";
+import { zenodoRouter } from "./modules/zenodo/zenodo.routes";
 
 /**
  * Assemble the Express application from the feature routers. This module holds
@@ -32,5 +33,6 @@ app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(openapiSpec));
 app.use("/api", healthRouter); // public: /api/health
 app.use(studiesRouter); // /api/studies*, /api/v1/studies* (auth-gated)
 app.use(uploadRouter); // /api/v1/studies/upload, /api/instances (auth-gated)
+app.use("/api/v1/zenodo", zenodoRouter); // Zenodo integration (auth-gated)
 
 export default app;
