@@ -49,3 +49,25 @@ if (
 }
 
 export const bcryptRounds = parseInt(process.env.BCRYPT_ROUNDS ?? "12", 10);
+
+// ── Zenodo (ZEN-01) ──────────────────────────────────────────────────────────
+// Lazy getters (instead of values captured at import time) so unit tests can
+// set the variables at runtime, and so a missing ENCRYPTION_KEY only fails when
+// a token is actually encrypted/decrypted — not at startup.
+export const encryptionConfig = {
+  /** 32 bytes, hex-encoded (64 hex chars). See .env.example. */
+  get keyHex(): string | undefined {
+    return process.env.ENCRYPTION_KEY;
+  },
+};
+
+export const zenodoTimeouts = {
+  /** Timeout for regular Zenodo API calls. */
+  get requestMs(): number {
+    return parseInt(process.env.ZENODO_TIMEOUT_MS ?? "10000", 10);
+  },
+  /** Timeout for large file uploads/downloads to/from Zenodo. */
+  get uploadMs(): number {
+    return parseInt(process.env.ZENODO_UPLOAD_TIMEOUT_MS ?? "300000", 10);
+  },
+};

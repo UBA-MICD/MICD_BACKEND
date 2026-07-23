@@ -70,6 +70,8 @@ services:
       BCRYPT_ROUNDS: ${BCRYPT_ROUNDS:-12}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@micd.local}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD must be set in .env}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      ZENODO_TIMEOUT_MS: ${ZENODO_TIMEOUT_MS:-10000}
     depends_on:
       postgres:
         condition: service_healthy
