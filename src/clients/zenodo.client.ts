@@ -52,6 +52,22 @@ export const zenodoClient = {
       timeout: zenodoTimeouts.requestMs,
     }),
 
+  /** Download one file of a record as a stream (ZEN-07 import). */
+  downloadRecordFileStream: (
+    recordId: number,
+    fileKey: string,
+    token: string | null,
+    environment: ZenodoEnvironment,
+  ): Promise<AxiosResponse> =>
+    axios.get(
+      `${API_BASE[environment]}/records/${recordId}/files/${encodeURIComponent(fileKey)}/content`,
+      {
+        responseType: "stream",
+        headers: bearer(token),
+        timeout: zenodoTimeouts.uploadMs,
+      },
+    ),
+
   // ── Depositions (publish flow, ZEN-05) ──────────────────────────────────────
   createDeposition: (token: string, environment: ZenodoEnvironment): Promise<AxiosResponse> =>
     axios.post(

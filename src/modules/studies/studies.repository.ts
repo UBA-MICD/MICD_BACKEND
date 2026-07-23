@@ -92,7 +92,10 @@ export async function findStudies(
       MAX(uploaded_at)         AS uploaded_at,
       COUNT(*)                 AS num_instances,
       MAX(zenodo_doi)          AS zenodo_doi,
-      MAX(zenodo_published_at) AS zenodo_published_at
+      MAX(zenodo_published_at) AS zenodo_published_at,
+      MAX(zenodo_source_record_id) AS zenodo_source_record_id,
+      MAX(zenodo_source_doi)   AS zenodo_source_doi,
+      MAX(zenodo_imported_at)  AS zenodo_imported_at
     FROM studies
     WHERE ${FILTER_WHERE}
     GROUP BY orthanc_study_id

@@ -24,6 +24,10 @@ zenodoRouter.get("/health", ctrl.getHealth);
 zenodoRouter.get("/search", ctrl.search);
 zenodoRouter.get("/records/:recordId", ctrl.getRecordDetail);
 
+// ── Import (ZEN-07) ──────────────────────────────────────────────────────────
+zenodoRouter.post("/import", ctrl.importRecord);
+zenodoRouter.get("/imports/:importId", ctrl.getImportStatus);
+
 // ── Publish (ZEN-05) ─────────────────────────────────────────────────────────
 zenodoRouter.post("/publish", ctrl.publish);
 zenodoRouter.get("/depositions/:depositionId", ctrl.getDepositionStatus);

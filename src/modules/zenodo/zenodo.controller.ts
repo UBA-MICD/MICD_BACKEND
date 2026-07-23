@@ -14,6 +14,12 @@ import {
   type ZenodoAuthor,
 } from "./zenodo-publish.service";
 import { searchZenodo, getZenodoRecord } from "./zenodo-search.service";
+import {
+  importFromZenodo,
+  getImport,
+  getImportFiles,
+  type ImportFileSpec,
+} from "./zenodo-import.service";
 import { Request } from "express";
 
 function isEnvironment(value: unknown): value is ZenodoEnvironment {
@@ -312,6 +318,105 @@ export const getRecordDetail: RequestHandler = async (req, res) => {
     const message = err instanceof Error ? err.message : String(err);
     console.error("Error al obtener el record de Zenodo:", message);
     res.status(500).json({ error: "Error al obtener el detalle del record" });
+  }
+};
+
+// ── Import (ZEN-07) ──────────────────────────────────────────────────────────
+
+function isFileSpecArray(value: unknown): value is ImportFileSpec[] {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every(
+      (f) =>
+        typeof f === "object" &&
+        f !== null &&
+        typeof (f as Record<string, unknown>).fileKey === "string",
+    )
+  );
+}
+
+// Body: { record_id, environment, files: [{ fileKey, fileSize? }], overwrite_duplicates? }
+export const importRecord: RequestHandler = async (req, res) => {
+  const { record_id, environment, files, overwrite_duplicates } = req.body ?? {};
+
+  const recordId = parseInt(record_id, 10);
+  if (isNaN(recordId)) {
+    res.status(400).json({ error: "record_id debe ser un número entero" });
+    return;
+  }
+  if (!isEnvironment(environment)) {
+    res.status(400).json({ error: "environment inválido, debe ser sandbox o production" });
+    return;
+  }
+  if (!isFileSpecArray(files)) {
+    res.status(400).json({
+      error: "files debe ser un array no vacío de objetos { fileKey: string, fileSize?: number }",
+    });
+    return;
+  }
+
+  // Warn on non-DICOM files — but don't block; service will skip .zip
+  const nonDcm = (files as ImportFileSpec[]).filter(
+    (f) => !f.fileKey.toLowerCase().endsWith(".dcm") && !f.fileKey.toLowerCase().endsWith(".zip"),
+  );
+  if (nonDcm.length === files.length) {
+    res.status(400).json({
+      error: "Ninguno de los archivos seleccionados es .dcm o .zip",
+      files: nonDcm.map((f) => f.fileKey),
+    });
+    return;
+  }
+
+  try {
+    const result = await importFromZenodo({
+      recordId,
+      environment,
+      files,
+      overwriteDuplicates: overwrite_duplicates === true,
+      userId: req.user!.sub,
+      ip: req.ip ?? "",
+    });
+
+    const httpStatus = result.imported > 0 ? 201 : result.duplicates > 0 ? 200 : 422;
+
+    res.status(httpStatus).json({
+      import_id: result.importId,
+      source_doi: result.sourceDoi,
+      imported: result.imported,
+      duplicates: result.duplicates,
+      failed: result.failed,
+      results: result.results,
+      ...(result.largeSizeWarning
+        ? { warning: "El dataset supera los 10 GB. La descarga puede tardar varios minutos." }
+        : {}),
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("Error al importar desde Zenodo:", message);
+    res.status(500).json({ error: "Error interno al importar el dataset" });
+  }
+};
+
+export const getImportStatus: RequestHandler = async (req, res) => {
+  const importId = parseInt(req.params.importId, 10);
+  if (isNaN(importId)) {
+    res.status(400).json({ error: "importId inválido" });
+    return;
+  }
+
+  try {
+    const importJob = await getImport(importId);
+    if (!importJob) {
+      res.status(404).json({ error: "Importación no encontrada" });
+      return;
+    }
+    const files = await getImportFiles(importId);
+    res.json({ import: importJob, files });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("Error al obtener la importación:", message);
+    res.status(500).json({ error: "Error al obtener el estado de la importación" });
   }
 };
 
