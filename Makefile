@@ -1,4 +1,4 @@
-.PHONY: help install hooks up down build logs ps restart check test pre-commit clean clean-data clean-python generate-fake-data test-python seed
+.PHONY: help install hooks up down build logs ps restart check test test-integration-docker pre-commit clean clean-data clean-python generate-fake-data test-python seed
 
 # ── Default ───────────────────────────────────────────────────────────────────
 help:
@@ -15,6 +15,7 @@ help:
 	@echo "  make restart     Rebuild images and restart stack"
 	@echo "  make pre-commit  Run pre-commit checks manually"
 	@echo "  make test        Run integration tests (requires stack up)"
+	@echo "  make test-integration-docker  Spin up a throwaway stack and run integration tests end-to-end"
 	@echo "  make check       Verify all services are running correctly"
 	@echo "  make generate-fake-data  Generate synthetic and volumetric DICOM files for testing"
 	@echo "  make seed        Wait for backend and seed all staging DICOM data"
@@ -62,6 +63,18 @@ check:
 
 test:
 	npm run test:integration
+
+# Fully self-contained: builds a throwaway Postgres + Orthanc + backend stack on
+# an isolated network, runs the Jest integration suites from inside it, and tears
+# everything down. Exit code mirrors the test run so it's CI-friendly.
+COMPOSE_TEST := docker compose -p micd-test -f docker-compose.test.yml
+test-integration-docker:
+	@$(COMPOSE_TEST) down -v --remove-orphans >/dev/null 2>&1 || true
+	@set -e; \
+	$(COMPOSE_TEST) up --build --abort-on-container-exit --exit-code-from tests; \
+	status=$$?; \
+	$(COMPOSE_TEST) down -v --remove-orphans >/dev/null 2>&1 || true; \
+	exit $$status
 
 test-python:
 	uv run --with pydicom python3 scripts/test_generate_synthetic_data.py
