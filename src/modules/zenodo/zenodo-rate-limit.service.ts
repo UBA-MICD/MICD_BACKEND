@@ -1,4 +1,5 @@
 import { pool } from "../../db/pool";
+import { zenodoQuota } from "../../config/env";
 import { type ZenodoEnvironment } from "./zenodo.service";
 
 // Pause new requests when we've made this many in the last 60 seconds.
@@ -7,6 +8,7 @@ export const THROTTLE_AT = 50;
 export const FIFTY_GB = 50 * 1024 * 1024 * 1024;
 
 const WINDOW_MS = 60_000;
+const QUOTA_ALERT_THRESHOLD = 0.9;
 
 async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -56,4 +58,38 @@ export async function throttle(environment: ZenodoEnvironment): Promise<void> {
   }
 
   await recordRequest(environment);
+}
+
+export interface QuotaStatus {
+  usedBytes: number;
+  limitBytes: number;
+  percentUsed: number;
+  alert: boolean;
+  alertMessage: string | null;
+}
+
+/**
+ * Estimates Zenodo storage usage from locally recorded file sizes.
+ * Compares against ZENODO_QUOTA_LIMIT_GB (default 50 GB).
+ */
+export async function getQuotaStatus(environment: ZenodoEnvironment): Promise<QuotaStatus> {
+  const limitBytes = zenodoQuota.limitGb * 1024 * 1024 * 1024;
+
+  const { rows } = await pool.query<{ total: string }>(
+    `SELECT COALESCE(SUM(f.file_size), 0) AS total
+     FROM zenodo_deposition_files f
+     JOIN zenodo_depositions d ON d.id = f.deposition_id
+     WHERE d.status = 'published' AND d.environment = $1`,
+    [environment],
+  );
+
+  const usedBytes = parseInt(rows[0].total, 10);
+  const percentUsed = limitBytes > 0 ? usedBytes / limitBytes : 0;
+
+  const alert = percentUsed >= QUOTA_ALERT_THRESHOLD;
+  const alertMessage = alert
+    ? `⚠ Cuota de Zenodo al ${Math.round(percentUsed * 100)}% — contactar al administrador de la cuenta`
+    : null;
+
+  return { usedBytes, limitBytes, percentUsed, alert, alertMessage };
 }

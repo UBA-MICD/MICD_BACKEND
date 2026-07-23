@@ -34,6 +34,9 @@ zenodoRouter.get("/config/sync/logs", ctrl.getSyncLogList);
 zenodoRouter.post("/import", ctrl.importRecord);
 zenodoRouter.get("/imports/:importId", ctrl.getImportStatus);
 
+// ── Quota & rate limit (ZEN-17) ──────────────────────────────────────────────
+zenodoRouter.get("/quota", ctrl.getQuota);
+
 // ── Publish (ZEN-05) ─────────────────────────────────────────────────────────
 zenodoRouter.post("/publish", ctrl.publish);
 zenodoRouter.get("/depositions/:depositionId", ctrl.getDepositionStatus);

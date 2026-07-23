@@ -28,6 +28,7 @@ import {
   isValidInterval,
   type SyncInterval,
 } from "./zenodo-sync.service";
+import { getQuotaStatus, getRequestCount, THROTTLE_AT } from "./zenodo-rate-limit.service";
 import { Request } from "express";
 
 function isEnvironment(value: unknown): value is ZenodoEnvironment {
@@ -497,6 +498,43 @@ export const getSyncLogList: RequestHandler = async (req, res) => {
     const message = err instanceof Error ? err.message : String(err);
     console.error("Error al obtener los logs de sincronización:", message);
     res.status(500).json({ error: "Error al obtener los logs" });
+  }
+};
+
+// ── Quota & rate limit (ZEN-17) ──────────────────────────────────────────────
+
+// GET /api/v1/zenodo/quota?environment=production
+export const getQuota: RequestHandler = async (req, res) => {
+  const environment = (req.query.environment as string) ?? "production";
+
+  if (!isEnvironment(environment)) {
+    res.status(400).json({ error: "environment inválido, debe ser sandbox o production" });
+    return;
+  }
+
+  try {
+    const [quota, requestCount] = await Promise.all([
+      getQuotaStatus(environment),
+      getRequestCount(environment),
+    ]);
+
+    res.json({
+      environment,
+      used_bytes: quota.usedBytes,
+      limit_bytes: quota.limitBytes,
+      percent_used: Math.round(quota.percentUsed * 1000) / 10,
+      alert: quota.alert,
+      alert_message: quota.alertMessage,
+      rate_limit: {
+        requests_last_minute: requestCount,
+        throttle_at: THROTTLE_AT,
+        limit: 60,
+      },
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("Error al consultar la cuota de Zenodo:", message);
+    res.status(500).json({ error: "Error al consultar el estado de la cuota" });
   }
 };
 

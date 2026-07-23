@@ -71,3 +71,10 @@ export const zenodoTimeouts = {
     return parseInt(process.env.ZENODO_UPLOAD_TIMEOUT_MS ?? "300000", 10);
   },
 };
+
+export const zenodoQuota = {
+  /** Storage limit compared against locally recorded published-file sizes. */
+  get limitGb(): number {
+    return parseInt(process.env.ZENODO_QUOTA_LIMIT_GB ?? "50", 10);
+  },
+};
