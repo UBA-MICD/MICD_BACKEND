@@ -1,7 +1,8 @@
 import cron from "node-cron";
 import { app } from "./app";
-import { serverConfig } from "./config/env";
+import { serverConfig, tlsConfig } from "./config/env";
 import { runMigrations } from "./db/migrate";
+import { createHttpServer } from "./shared/http-server";
 import { checkAllEnvironments } from "./modules/zenodo/zenodo.service";
 import { shouldRunSync, runSync } from "./modules/zenodo/zenodo-sync.service";
 
@@ -14,8 +15,11 @@ import { shouldRunSync, runSync } from "./modules/zenodo/zenodo-sync.service";
  */
 runMigrations()
   .then(() => {
-    app.listen(serverConfig.port, () =>
-      console.log(`MICD backend listening on port ${serverConfig.port}`),
+    const server = createHttpServer(app, tlsConfig);
+    server.listen(serverConfig.port, () =>
+      console.log(
+        `MICD backend listening on port ${serverConfig.port} (${tlsConfig.enabled ? "https" : "http"})`,
+      ),
     );
 
     // ZEN-02: run the Zenodo health check at startup, then every hour

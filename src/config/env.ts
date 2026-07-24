@@ -10,6 +10,14 @@ export const serverConfig = {
   port: parseInt(process.env.PORT ?? "3000", 10),
 };
 
+// TLS is opt-in: unset/anything but the literal "true" keeps the server on
+// plain HTTP (e.g. behind a reverse proxy that already terminates TLS).
+export const tlsConfig = {
+  enabled: process.env.TLS_ENABLED === "true",
+  certPath: process.env.TLS_CERT_PATH,
+  keyPath: process.env.TLS_KEY_PATH,
+};
+
 export const dbConfig = {
   host: process.env.DB_HOST ?? "postgres",
   port: parseInt(process.env.DB_PORT ?? "5432", 10),

@@ -20,6 +20,9 @@ const ENV_KEYS = [
   "JWT_REFRESH_TTL",
   "BCRYPT_ROUNDS",
   "NODE_ENV",
+  "TLS_ENABLED",
+  "TLS_CERT_PATH",
+  "TLS_KEY_PATH",
 ] as const;
 
 type EnvOverrides = Partial<Record<(typeof ENV_KEYS)[number], string>>;
@@ -211,5 +214,36 @@ describe("config/env — production DB/Orthanc weak-password guard", () => {
     const env = loadEnv({ NODE_ENV: "development" });
     expect(env.dbConfig.password).toBe("micd");
     expect(env.orthancConfig.password).toBe("orthanc");
+  });
+});
+
+describe("config/env — TLS", () => {
+  it("defaults to TLS disabled with no cert/key paths", () => {
+    const env = loadEnv();
+    expect(env.tlsConfig).toEqual({
+      enabled: false,
+      certPath: undefined,
+      keyPath: undefined,
+    });
+  });
+
+  it('enables TLS only when TLS_ENABLED is exactly "true"', () => {
+    expect(loadEnv({ TLS_ENABLED: "1" }).tlsConfig.enabled).toBe(false);
+    expect(loadEnv({ TLS_ENABLED: "false" }).tlsConfig.enabled).toBe(false);
+    expect(loadEnv({ TLS_ENABLED: "TRUE" }).tlsConfig.enabled).toBe(false);
+    expect(loadEnv({ TLS_ENABLED: "true" }).tlsConfig.enabled).toBe(true);
+  });
+
+  it("reads cert/key paths from the environment", () => {
+    const env = loadEnv({
+      TLS_ENABLED: "true",
+      TLS_CERT_PATH: "/certs/tls.crt",
+      TLS_KEY_PATH: "/certs/tls.key",
+    });
+    expect(env.tlsConfig).toEqual({
+      enabled: true,
+      certPath: "/certs/tls.crt",
+      keyPath: "/certs/tls.key",
+    });
   });
 });
