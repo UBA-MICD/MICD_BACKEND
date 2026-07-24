@@ -1,0 +1,182 @@
+# Production stack.
+#
+# Standalone full file (like docker-compose.test.yml), not a merge-overlay on
+# top of docker-compose.yml — Compose's array-merge rules (ports, volumes)
+# don't reliably let an override *remove* something the base file publishes,
+# and removing host-published ports for postgres/orthanc is exactly the point
+# here. Same container names / network as docker-compose.yml on purpose (this
+# file replaces it for a real deployment, so the sibling `web` repo's nginx
+# still finds `backend` on the `micd` network unchanged) — do not run both
+# stacks at once.
+#
+# Run with:
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Every secret below is required (${VAR:?...}), no insecure defaults. See
+# .env.prod.example.
+
+services:
+
+  # ── PostgreSQL ───────────────────────────────────────────────────────────────
+  postgres:
+    # Digest-pinned STOCK postgres (not the `-alpine` tag — see the tag-collision
+    # warning in CLAUDE.md). Same image already vetted in docker-compose.test.yml.
+    image: postgres:16@sha256:33f923b05f64ca54ac4401c01126a6b92afe839a0aa0a52bc5aeb5cc958e5f20
+    container_name: micd-postgres
+    restart: always
+    # No cap_drop here: verified live that the official image's entrypoint
+    # needs root capabilities (chown data dir, setuid/setgid to `postgres`)
+    # before it drops privileges itself — cap_drop: ALL makes it fail with
+    # "chmod: Operation not permitted" / "failed switching to 'postgres'".
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      POSTGRES_DB: ${DB_NAME:-micd}
+      POSTGRES_USER: ${DB_USER:-micd}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    # No host port published: only `backend`/`micd-seeder` reach it, by
+    # service name, over the internal `micd` network.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-micd} -d ${DB_NAME:-micd}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "${POSTGRES_CPU_LIMIT:-1}"
+          memory: ${POSTGRES_MEM_LIMIT:-512M}
+    logging:
+      driver: json-file
+      options:
+        max-size: "${LOG_MAX_SIZE:-10m}"
+        max-file: "${LOG_MAX_FILES:-3}"
+
+  # ── Orthanc DICOM server ─────────────────────────────────────────────────────
+  orthanc:
+    image: orthancteam/orthanc@sha256:dc18595aded1daf3a0de17570ac3a1384a204292785c949b7d08d23d15dcd411
+    platform: linux/amd64
+    container_name: micd-orthanc
+    restart: always
+    # No cap_drop here: verified live that the entrypoint needs root to write
+    # /etc/hostid on first boot — cap_drop: ALL makes it loop on
+    # "Permission denied" and never come up.
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      ORTHANC__NAME: "MICD Orthanc"
+      ORTHANC__AUTHENTICATION_ENABLED: "true"
+      ORTHANC__REGISTERED_USERS: |
+        {"${ORTHANC_USERNAME:-orthanc}": "${ORTHANC_PASSWORD:?ORTHANC_PASSWORD must be set in .env}"}
+      ORTHANC__DICOM_WEB__ENABLE: "true"
+      ORTHANC__DICOM_WEB__ROOT: "/dicom-web/"
+      VERBOSE_ENABLED: "false"
+    volumes:
+      - orthanc-data:/var/lib/orthanc/db
+    # No host port published by default — the backend proxies Orthanc's REST
+    # API, so browsers never talk to it directly. Only uncomment if an
+    # external DICOM modality needs to C-STORE straight into this Orthanc:
+    # ports:
+    #   - "${ORTHANC_DICOM_PORT:-4242}:4242"
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request, base64; req=urllib.request.Request('http://localhost:8042/system'); req.add_header('Authorization','Basic '+base64.b64encode(b'${ORTHANC_USERNAME:-orthanc}:${ORTHANC_PASSWORD:?ORTHANC_PASSWORD must be set in .env}').decode()); urllib.request.urlopen(req,timeout=3)\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "${ORTHANC_CPU_LIMIT:-2}"
+          memory: ${ORTHANC_MEM_LIMIT:-2G}
+    logging:
+      driver: json-file
+      options:
+        max-size: "${LOG_MAX_SIZE:-10m}"
+        max-file: "${LOG_MAX_FILES:-3}"
+
+  # ── Backend (Express / Node.js) ──────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: micd-backend
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # Safe because uploads use multer's in-memory storage (no disk writes) and
+    # the image never writes outside dist/node_modules at runtime — see
+    # src/middleware/upload.middleware.ts.
+    read_only: true
+    tmpfs:
+      - /tmp
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-micd}
+      DB_USER: ${DB_USER:-micd}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
+      ORTHANC_URL: http://orthanc:8042
+      ORTHANC_USERNAME: ${ORTHANC_USERNAME:-orthanc}
+      ORTHANC_PASSWORD: ${ORTHANC_PASSWORD:?ORTHANC_PASSWORD must be set in .env}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET must be set in .env}
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
+      JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-7d}
+      BCRYPT_ROUNDS: ${BCRYPT_ROUNDS:-12}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@micd.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD must be set in .env}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      ZENODO_TIMEOUT_MS: ${ZENODO_TIMEOUT_MS:-10000}
+      TLS_ENABLED: ${TLS_ENABLED:-false}
+      TLS_CERT_PATH: ${TLS_CERT_PATH:-}
+      TLS_KEY_PATH: ${TLS_KEY_PATH:-}
+    volumes:
+      # Only relevant when TLS_ENABLED=true; point TLS_CERTS_DIR at a host
+      # directory containing the files TLS_CERT_PATH/TLS_KEY_PATH reference
+      # (e.g. /certs/tls.crt, /certs/tls.key). Harmless empty mount otherwise.
+      - ${TLS_CERTS_DIR:-./certs}:/certs:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      orthanc:
+        condition: service_healthy
+    ports:
+      - "${BACKEND_PORT:-3000}:3000"
+    healthcheck:
+      # Readiness (Postgres + Orthanc reachable), not just liveness — this is
+      # the container's "safe to route traffic here" signal for depends_on/LB.
+      # Scheme follows TLS_ENABLED so this stays correct whichever way TLS is
+      # configured, instead of a hardcoded http:// (note the $$ — escaped so
+      # Compose passes $TLS_ENABLED through to the container shell unexpanded).
+      test: ["CMD-SHELL", "proto=http; [ \"$$TLS_ENABLED\" = \"true\" ] && proto=https; wget --no-check-certificate -qO- $$proto://localhost:3000/api/readyz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "${BACKEND_CPU_LIMIT:-2}"
+          memory: ${BACKEND_MEM_LIMIT:-1G}
+    logging:
+      driver: json-file
+      options:
+        max-size: "${LOG_MAX_SIZE:-10m}"
+        max-file: "${LOG_MAX_FILES:-3}"
+
+volumes:
+  postgres-data:
+  orthanc-data:
+
+# Named network so the MICD_WEB frontend can join it (external: true on its
+# side) and reach this stack's `backend` service by name — same network name
+# as docker-compose.yml since this file replaces it, not layers on top of it.
+networks:
+  default:
+    name: micd

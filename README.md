@@ -29,6 +29,7 @@ MICD_BACKEND/
 │   └── *.test.ts               # Pruebas unitarias e integración (Jest)
 ├── Dockerfile                  # Construcción multi-stage (builder -> runtime slim)
 ├── docker-compose.yml          # Postgres + Orthanc + Backend API + Seeder service
+├── docker-compose.prod.yml     # Stack de producción endurecido (ver "Despliegue en Producción")
 ├── Makefile                    # Comandos abreviados de desarrollo y operaciones
 ├── scripts/
 │   ├── check.sh                # Script de verificación del estado del stack (local y docker)
@@ -37,7 +38,8 @@ MICD_BACKEND/
 │   └── seed_api.ts             # Script TypeScript para seeding automatizado
 ├── docs/                       # Guías operativas y de testing de la base de datos
 ├── .data.example/              # Archivos DICOM de prueba base para la generación
-└── .env.example                # Variables de entorno pre-documentadas con valores default
+├── .env.example                # Variables de entorno pre-documentadas con valores default (desarrollo)
+└── .env.prod.example           # Variables requeridas para docker-compose.prod.yml (sin defaults inseguros)
 ```
 
 ---
@@ -116,6 +118,25 @@ Tanto el script de testing como el proceso de seeding y health-check leen dinám
 - `BACKEND_PORT` (o `PORT`): Define el puerto expuesto del backend (default `3000`).
 - `ORTHANC_HTTP_PORT`: Define el puerto REST de Orthanc (default `8042`).
 - `ORTHANC_USERNAME` / `ORTHANC_PASSWORD`: Define el usuario y contraseña del PACS (default `orthanc`).
+
+---
+
+## Despliegue en Producción
+
+`docker-compose.prod.yml` es un stack completo independiente (no un overlay sobre `docker-compose.yml`) pensado para un despliegue real: sin puertos publicados para Postgres/Orthanc, imágenes ancladas por digest, `cap_drop: ALL` + `read_only` en el backend, límites de CPU/memoria y rotación de logs. Usa los mismos nombres de contenedor y red que `docker-compose.yml`, así que **no corras ambos stacks a la vez** — este reemplaza al otro para producción.
+
+```bash
+cp .env.prod.example .env
+# completar cada valor en blanco (ver comentarios del archivo para el comando de generación)
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+Puntos clave:
+
+- **Sin secretos por default:** `DB_PASSWORD`, `ORTHANC_PASSWORD`, `JWT_SECRET`, `JWT_REFRESH_SECRET` y `ADMIN_PASSWORD` son obligatorios — tanto Compose (`${VAR:?...}`) como `env.ts` fallan al arrancar si quedan vacíos o en su valor de desarrollo.
+- **HTTPS opcional en el propio backend:** con `TLS_ENABLED=true` (y `TLS_CERT_PATH`/`TLS_KEY_PATH`/`TLS_CERTS_DIR` configurados), Express sirve HTTPS directamente — sin depender de un proxy reverso delante. Por default queda en HTTP plano.
+- **Liveness vs readiness:** `GET /api/livez` (sin dependencias, señal de reinicio) y `GET /api/readyz` (Postgres + Orthanc alcanzables, señal de "listo para tráfico") — `GET /api/health` se mantiene como alias de `/api/readyz` por compatibilidad.
+- **Recursos y logs configurables** vía `POSTGRES_CPU_LIMIT`/`POSTGRES_MEM_LIMIT`, `ORTHANC_CPU_LIMIT`/`ORTHANC_MEM_LIMIT`, `BACKEND_CPU_LIMIT`/`BACKEND_MEM_LIMIT`, `LOG_MAX_SIZE`/`LOG_MAX_FILES` — ver `.env.prod.example`.
 
 ---
 
