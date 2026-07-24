@@ -8,7 +8,7 @@ services:
     environment:
       POSTGRES_DB: ${DB_NAME:-micd}
       POSTGRES_USER: ${DB_USER:-micd}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-micd}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     ports:
@@ -29,7 +29,7 @@ services:
       ORTHANC__NAME: "MICD Orthanc"
       ORTHANC__AUTHENTICATION_ENABLED: "true"
       ORTHANC__REGISTERED_USERS: |
-        {"${ORTHANC_USERNAME:-orthanc}": "${ORTHANC_PASSWORD:-orthanc}"}
+        {"${ORTHANC_USERNAME:-orthanc}": "${ORTHANC_PASSWORD:?ORTHANC_PASSWORD must be set in .env}"}
       ORTHANC__DICOM_WEB__ENABLE: "true"
       ORTHANC__DICOM_WEB__ROOT: "/dicom-web/"
       VERBOSE_ENABLED: "true"
@@ -39,7 +39,7 @@ services:
       - "${ORTHANC_HTTP_PORT:-8042}:8042"
       - "${ORTHANC_DICOM_PORT:-4242}:4242"
     healthcheck:
-      test: ["CMD-SHELL", "python3 -c \"import urllib.request, base64; req=urllib.request.Request('http://localhost:8042/system'); req.add_header('Authorization','Basic '+base64.b64encode(b'${ORTHANC_USERNAME:-orthanc}:${ORTHANC_PASSWORD:-orthanc}').decode()); urllib.request.urlopen(req,timeout=3)\" || exit 1"]
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request, base64; req=urllib.request.Request('http://localhost:8042/system'); req.add_header('Authorization','Basic '+base64.b64encode(b'${ORTHANC_USERNAME:-orthanc}:${ORTHANC_PASSWORD:?ORTHANC_PASSWORD must be set in .env}').decode()); urllib.request.urlopen(req,timeout=3)\" || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -59,10 +59,10 @@ services:
       DB_PORT: 5432
       DB_NAME: ${DB_NAME:-micd}
       DB_USER: ${DB_USER:-micd}
-      DB_PASSWORD: ${DB_PASSWORD:-micd}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
       ORTHANC_URL: http://orthanc:8042
       ORTHANC_USERNAME: ${ORTHANC_USERNAME:-orthanc}
-      ORTHANC_PASSWORD: ${ORTHANC_PASSWORD:-orthanc}
+      ORTHANC_PASSWORD: ${ORTHANC_PASSWORD:?ORTHANC_PASSWORD must be set in .env}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET must be set in .env}
       JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}

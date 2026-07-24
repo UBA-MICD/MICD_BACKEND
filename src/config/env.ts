@@ -48,6 +48,20 @@ if (
   );
 }
 
+// Same fail-fast for the DB and Orthanc credentials: the dev-friendly
+// defaults ("micd"/"orthanc") would otherwise silently ship to production.
+if (process.env.NODE_ENV === "production" && dbConfig.password === "micd") {
+  throw new Error("DB_PASSWORD must be set to a real secret in production");
+}
+if (
+  process.env.NODE_ENV === "production" &&
+  orthancConfig.password === "orthanc"
+) {
+  throw new Error(
+    "ORTHANC_PASSWORD must be set to a real secret in production",
+  );
+}
+
 export const bcryptRounds = parseInt(process.env.BCRYPT_ROUNDS ?? "12", 10);
 
 // ── Zenodo (ZEN-01) ──────────────────────────────────────────────────────────
