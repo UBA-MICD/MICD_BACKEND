@@ -30,7 +30,7 @@ app.use("/auth", authRouter); // public: /auth/login, /auth/refresh, /auth/logou
 app.get("/api/docs/openapi.json", (_req, res) => res.json(openapiSpec));
 app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(openapiSpec));
 
-app.use("/api", healthRouter); // public: /api/health
+app.use("/api", healthRouter); // public: /api/livez, /api/readyz, /api/health (alias)
 app.use(studiesRouter); // /api/studies*, /api/v1/studies* (auth-gated)
 app.use(uploadRouter); // /api/v1/studies/upload, /api/instances (auth-gated)
 app.use("/api/v1/zenodo", zenodoRouter); // Zenodo integration (auth-gated)

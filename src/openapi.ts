@@ -204,11 +204,82 @@ export const openapiSpec = {
       },
     },
 
+    "/api/livez": {
+      get: {
+        tags: ["health"],
+        summary: "Liveness probe",
+        description:
+          "Process is up and answering HTTP. Never checks Postgres or " +
+          "Orthanc — an orchestrator should restart the container on " +
+          "failure here, so it must not fail from a downstream outage.",
+        responses: {
+          "200": {
+            description: "Process alive",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: { status: { type: "string", example: "ok" } },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+
+    "/api/readyz": {
+      get: {
+        tags: ["health"],
+        summary: "Readiness probe",
+        description:
+          "Verifies PostgreSQL and Orthanc connectivity. An orchestrator " +
+          "should stop routing traffic here on failure, not restart the " +
+          "container.",
+        responses: {
+          "200": {
+            description: "All dependencies reachable",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    status: { type: "string", example: "ok" },
+                    orthanc: {
+                      type: "string",
+                      description: "Orthanc version",
+                      example: "1.12.4",
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "503": {
+            description: "PostgreSQL or Orthanc unreachable",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    status: { type: "string", example: "degraded" },
+                    error: { type: "string" },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+
     "/api/health": {
       get: {
         tags: ["health"],
-        summary: "Health check",
-        description: "Verifies PostgreSQL and Orthanc connectivity.",
+        summary: "Health check (deprecated alias of /api/readyz)",
+        deprecated: true,
+        description:
+          "Kept for existing callers. Identical behavior to GET /api/readyz.",
         responses: {
           "200": {
             description: "All dependencies reachable",
