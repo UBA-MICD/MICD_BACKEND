@@ -71,7 +71,9 @@ export const listStudies: RequestHandler = async (req, res) => {
       dateTo: (req.query.date_to as string) || null,
       search: (req.query.search as string) || null,
     };
-    res.json(await studiesService.listStudies(page, limit, filters));
+    const result = await studiesService.listStudies(page, limit, filters);
+    console.log(`[studies] listStudies — total=${result.total} page=${page} filters=${JSON.stringify(filters)} studies=${JSON.stringify(result.studies.map(s => ({ id: s.orthanc_study_id, patient: s.patient_name, modality: s.modality })))}`);
+    res.json(result);
   } catch (err) {
     sendError(res, err);
   }

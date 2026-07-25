@@ -294,9 +294,11 @@ export const getRecordDetail: RequestHandler = async (req, res) => {
   }
 
   const environment = parseEnvironment(req);
+  console.log(`[zenodo] getRecordDetail — recordId=${recordId} environment=${environment}`);
 
   try {
     const record = await getZenodoRecord(recordId, environment);
+    console.log(`[zenodo] getRecordDetail — importable=${record.importable} files=${JSON.stringify((record.files ?? []).map(f => ({ key: f.key, size: f.size })))}`);
 
     if (!record.importable) {
       res.json({
@@ -348,6 +350,7 @@ function isFileSpecArray(value: unknown): value is ImportFileSpec[] {
 // Body: { record_id, environment, files: [{ fileKey, fileSize? }], overwrite_duplicates? }
 export const importRecord: RequestHandler = async (req, res) => {
   const { record_id, environment, files, overwrite_duplicates } = req.body ?? {};
+  console.log(`[zenodo] importRecord received — record_id=${record_id} environment=${environment} files=${JSON.stringify(files)}`);
 
   const recordId = parseInt(record_id, 10);
   if (isNaN(recordId)) {
@@ -387,7 +390,19 @@ export const importRecord: RequestHandler = async (req, res) => {
       ip: req.ip ?? "",
     });
 
+    console.log(`[zenodo-import] importFromZenodo result — imported=${result.imported} duplicates=${result.duplicates} failed=${result.failed} results=${JSON.stringify(result.results.map(r => ({ fileKey: r.fileKey, status: r.status, error: r.error })))}`);
     const httpStatus = result.imported > 0 ? 201 : result.duplicates > 0 ? 200 : 422;
+
+    const skipped = result.results.filter((r) => r.status === "skipped").length;
+    const failedResults = result.results.filter((r) => r.status === "failed");
+    const unprocessableError =
+      httpStatus === 422
+        ? skipped > 0 && result.failed === 0
+          ? "Los archivos ZIP no son importables directamente. Descomprimí el archivo y subí los .dcm individualmente."
+          : failedResults.length > 0
+            ? failedResults[0].error ?? "No se pudo importar ningún archivo."
+            : "No se encontraron archivos importables en este registro."
+        : undefined;
 
     res.status(httpStatus).json({
       import_id: result.importId,
@@ -396,6 +411,7 @@ export const importRecord: RequestHandler = async (req, res) => {
       duplicates: result.duplicates,
       failed: result.failed,
       results: result.results,
+      ...(unprocessableError ? { error: unprocessableError } : {}),
       ...(result.largeSizeWarning
         ? { warning: "El dataset supera los 10 GB. La descarga puede tardar varios minutos." }
         : {}),
