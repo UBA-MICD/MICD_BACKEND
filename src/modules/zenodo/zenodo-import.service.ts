@@ -226,33 +226,35 @@ async function importSingleFile(
           existingStudyId: existing[0].orthanc_study_id,
         };
       }
-      // In Orthanc but missing from DB — register it so it appears in the explorer
+      // In Orthanc but missing from DB — register it so it appears in the explorer,
+      // using the instanceId/studyId Orthanc already returned above (no need to
+      // delete+re-upload something that's already correctly stored).
       console.log(`[zenodo-import] alreadyStored but not in DB → inserting to register`);
-    }
-
-    // overwrite=true: delete existing and re-upload
-    try {
-      await orthancClient.deleteInstance(instanceId);
-      if (existing[0]) {
-        await pool.query("DELETE FROM studies WHERE sop_instance_uid = $1", [sopInstanceUid]);
+    } else {
+      // overwrite=true: delete existing and re-upload
+      try {
+        await orthancClient.deleteInstance(instanceId);
+        if (existing[0]) {
+          await pool.query("DELETE FROM studies WHERE sop_instance_uid = $1", [sopInstanceUid]);
+        }
+      } catch {
+        // non-fatal: continue with re-upload attempt
       }
-    } catch {
-      // non-fatal: continue with re-upload attempt
-    }
 
-    try {
-      const reupload = await withRetry(() =>
-        streamFileToOrthanc(recordId, fileKey, environment, token),
-      );
-      instanceId = reupload.instanceId;
-      studyId = reupload.studyId;
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      return {
-        fileKey,
-        status: "failed",
-        error: `Fallo al re-importar tras sobreescritura: ${message}`,
-      };
+      try {
+        const reupload = await withRetry(() =>
+          streamFileToOrthanc(recordId, fileKey, environment, token),
+        );
+        instanceId = reupload.instanceId;
+        studyId = reupload.studyId;
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        return {
+          fileKey,
+          status: "failed",
+          error: `Fallo al re-importar tras sobreescritura: ${message}`,
+        };
+      }
     }
   }
 
@@ -546,7 +548,14 @@ export async function importFromZenodo(opts: ImportOptions): Promise<ImportResul
       results.push(...zipResults);
       const anyImported = zipResults.some((r) => r.status === "imported");
       const anyFailed = zipResults.some((r) => r.status === "failed");
-      const zipStatus = anyImported ? "imported" : anyFailed ? "failed" : "duplicate";
+      const anyDuplicate = zipResults.some((r) => r.status === "duplicate");
+      const zipStatus = anyImported
+        ? "imported"
+        : anyFailed
+          ? "failed"
+          : anyDuplicate
+            ? "duplicate"
+            : "skipped"; // no .dcm entries found inside the ZIP
       await pool.query(
         `UPDATE zenodo_import_files SET status=$1, imported_at=CASE WHEN $1='imported' THEN NOW() ELSE NULL END
          WHERE import_id=$2 AND file_key=$3`,

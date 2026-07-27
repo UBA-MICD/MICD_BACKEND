@@ -4,17 +4,6 @@ import * as repo from "./upload.repository";
 
 const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500 MB
 
-// DICOM files have the magic bytes 'DICM' at offset 128
-function isDicom(buf: Buffer): boolean {
-  if (buf.length < 132) return false;
-  return (
-    buf[128] === 0x44 &&
-    buf[129] === 0x49 &&
-    buf[130] === 0x43 &&
-    buf[131] === 0x4d
-  );
-}
-
 // Tags use Latin-1 encoding in old DICOMs — normalize to UTF-8 safe string
 function normalizeText(value: unknown): string {
   if (typeof value !== "string") return "";

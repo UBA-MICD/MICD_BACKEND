@@ -22,7 +22,7 @@ describe("config/env — zenodo lazy getters", () => {
 
     expect(encryptionConfig.keyHex).toBeUndefined();
     expect(zenodoTimeouts.requestMs).toBe(10000);
-    expect(zenodoTimeouts.uploadMs).toBe(300000);
+    expect(zenodoTimeouts.uploadMs).toBe(1800000);
     expect(zenodoQuota.limitGb).toBe(50);
   });
 
