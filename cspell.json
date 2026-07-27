@@ -32,6 +32,11 @@
     "repr",
     "navigations",
     "pydicom",
-    "seeder"
+    "seeder",
+    "testpassword",
+    "zenodo",
+    "pgcrypto's",
+    "pgcrypto",
+    "testpassword"
   ]
 }
