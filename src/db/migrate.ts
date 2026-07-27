@@ -15,6 +15,11 @@ const migrations = [migration001, migration002, migration003];
 /** Apply every migration in order. Idempotent — safe to call on each boot. */
 export async function runMigrations(): Promise<void> {
   for (const migration of migrations) {
-    await pool.query(migration.sql);
+    const stmts = Array.isArray(migration.sql)
+      ? migration.sql
+      : [migration.sql];
+    for (const stmt of stmts) {
+      await pool.query(stmt);
+    }
   }
 }
