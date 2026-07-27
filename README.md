@@ -36,9 +36,24 @@ MICD_BACKEND/
 │   ├── generate_volumetric_data.py  # Script de generación de volumen 3D sintético (esfera)
 │   └── seed_api.ts             # Script TypeScript para seeding automatizado
 ├── docs/                       # Guías operativas y de testing de la base de datos
+│   └── adr/                    # Architecture Decision Records (decisiones de arquitectura)
 ├── .data.example/              # Archivos DICOM de prueba base para la generación
 └── .env.example                # Variables de entorno pre-documentadas con valores default
 ```
+
+---
+
+## Decisiones de Arquitectura (ADR)
+
+Las decisiones técnicas del sistema están registradas como **Architecture Decision Records** en [`docs/adr/`](docs/adr/README.md), todas con el mismo formato: **Contexto → Opciones consideradas → Decisión → Consecuencias**.
+
+- [ADR-0001 — Stack tecnológico](docs/adr/0001-stack-tecnologico.md)
+- [ADR-0002 — Protocolo de comunicación](docs/adr/0002-protocolo-de-comunicacion.md)
+- [ADR-0003 — Integración con Orthanc como PACS](docs/adr/0003-integracion-orthanc.md)
+- [ADR-0004 — Autenticación con JWT](docs/adr/0004-autenticacion-jwt.md)
+- [ADR-0005 — Módulo de anonimización externo](docs/adr/0005-modulo-anonimizacion-externo.md)
+
+Para registrar una decisión nueva, copiar [`docs/adr/TEMPLATE.md`](docs/adr/TEMPLATE.md) con el número siguiente y agregarla al índice. El conjunto de ADR se mantiene **idéntico en `MICD_BACKEND` y `MICD_WEB`** (son decisiones del sistema, no de un repo): al cambiar uno, replicar el archivo en el otro repo.
 
 ---
 
