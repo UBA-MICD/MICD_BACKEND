@@ -25,6 +25,7 @@ describe("audit", () => {
       "ZENODO_TOKEN_CONFIGURED",
       "sandbox",
       "10.0.0.1",
+      null,
     ]);
   });
 
@@ -41,6 +42,7 @@ describe("audit", () => {
       "ZENODO_TOKEN_REMOVED",
       "sandbox",
       "10.0.0.1",
+      null,
     ]);
     expect(poolQuery).not.toHaveBeenCalled();
   });

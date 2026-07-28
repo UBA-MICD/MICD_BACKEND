@@ -126,6 +126,82 @@ describe("importFromZenodo — DB persistence failure", () => {
   });
 });
 
+describe("importFromZenodo — overwrite re-upload failure", () => {
+  it("returns failed when re-upload after delete throws", async () => {
+    poolQuery
+      .mockResolvedValueOnce({ rows: [{ id: 42 }] })                        // INSERT zenodo_imports
+      .mockResolvedValueOnce({ rows: [] })                                   // audit STARTED
+      .mockResolvedValueOnce({ rows: [] })                                   // INSERT import_file
+      .mockResolvedValueOnce({ rows: [] })                                   // UPDATE downloading
+      .mockResolvedValueOnce({ rows: [{ orthanc_study_id: "study-old" }] }) // existing lookup
+      .mockResolvedValueOnce({ rows: [] })                                   // DELETE studies row
+      .mockResolvedValue({ rows: [] });                                      // remaining
+
+    mockedAxios.get
+      .mockResolvedValueOnce({ data: { doi: null } } as any)   // fetchRecordMeta
+      .mockResolvedValueOnce({ data: FAKE_STREAM } as any)     // first download (streamFileToOrthanc)
+      .mockResolvedValueOnce({ data: TAGS } as any);           // fetchTags
+    mockedAxios.post.mockResolvedValueOnce({ data: ORTHANC_ALREADY } as any); // AlreadyStored
+    mockedAxios.delete.mockResolvedValueOnce({ data: {} } as any);            // delete instance
+    // re-upload download throws
+    mockedAxios.get.mockRejectedValueOnce(new Error("re-upload network error"));
+
+    const result = await importFromZenodo({ ...OPTS, overwriteDuplicates: true });
+
+    expect(result.failed).toBe(1);
+    expect(result.results[0].error).toContain("Fallo al re-importar");
+  });
+});
+
+describe("importFromZenodo — AlreadyStored but not in DB (overwrite=false)", () => {
+  it("registers the study when it is in Orthanc but missing from DB", async () => {
+    poolQuery
+      .mockResolvedValueOnce({ rows: [{ id: 42 }] }) // INSERT zenodo_imports
+      .mockResolvedValueOnce({ rows: [] })             // audit STARTED
+      .mockResolvedValueOnce({ rows: [] })             // INSERT import_file
+      .mockResolvedValueOnce({ rows: [] })             // UPDATE downloading
+      .mockResolvedValueOnce({ rows: [] })             // existing lookup → empty (not in DB)
+      .mockResolvedValue({ rows: [] });                // delete (throws non-fatal), re-upload, studies, etc.
+
+    mockedAxios.get
+      .mockResolvedValueOnce({ data: { doi: null } } as any)   // fetchRecordMeta
+      .mockResolvedValueOnce({ data: FAKE_STREAM } as any)     // first upload stream
+      .mockResolvedValueOnce({ data: TAGS } as any)            // fetchTags
+      .mockResolvedValueOnce({ data: FAKE_STREAM } as any);    // re-upload stream
+    mockedAxios.post
+      .mockResolvedValueOnce({ data: ORTHANC_ALREADY } as any) // AlreadyStored
+      .mockResolvedValueOnce({ data: ORTHANC_OK } as any);     // re-upload succeeds
+    mockedAxios.delete.mockResolvedValueOnce({ data: {} } as any);
+
+    // overwriteDuplicates: false but not in DB → should fall through to re-register
+    const result = await importFromZenodo({ ...OPTS, overwriteDuplicates: false });
+
+    expect(result.imported).toBe(1);
+  });
+});
+
+describe("importFromZenodo — fetchTags returns empty on Orthanc error", () => {
+  it("still imports successfully even if getInstanceTags throws (tags become empty strings)", async () => {
+    poolQuery
+      .mockResolvedValueOnce({ rows: [{ id: 42 }] }) // INSERT zenodo_imports
+      .mockResolvedValueOnce({ rows: [] })             // audit STARTED
+      .mockResolvedValueOnce({ rows: [] })             // INSERT import_file
+      .mockResolvedValueOnce({ rows: [] })             // UPDATE downloading
+      .mockResolvedValue({ rows: [] });                // remaining
+
+    mockedAxios.get
+      .mockResolvedValueOnce({ data: { doi: null } } as any)  // fetchRecordMeta
+      .mockResolvedValueOnce({ data: FAKE_STREAM } as any)    // streamFileToOrthanc download
+      .mockRejectedValueOnce(new Error("Orthanc tags unreachable")); // getInstanceTags throws
+    mockedAxios.post.mockResolvedValueOnce({ data: ORTHANC_OK } as any);
+
+    const result = await importFromZenodo(OPTS);
+
+    // fetchTags swallows the error and returns {}; empty tags lead to empty strings
+    expect(result.imported).toBe(1);
+  });
+});
+
 describe("import getters", () => {
   it("getImport returns the row or null", async () => {
     poolQuery.mockResolvedValueOnce({ rows: [{ id: 42, status: "completed" }] });

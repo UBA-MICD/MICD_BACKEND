@@ -4,17 +4,6 @@ import * as repo from "./upload.repository";
 
 const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500 MB
 
-// DICOM files have the magic bytes 'DICM' at offset 128
-function isDicom(buf: Buffer): boolean {
-  if (buf.length < 132) return false;
-  return (
-    buf[128] === 0x44 &&
-    buf[129] === 0x49 &&
-    buf[130] === 0x43 &&
-    buf[131] === 0x4d
-  );
-}
-
 // Tags use Latin-1 encoding in old DICOMs — normalize to UTF-8 safe string
 function normalizeText(value: unknown): string {
   if (typeof value !== "string") return "";
@@ -56,17 +45,13 @@ export async function uploadDicom(
     });
   }
 
-  // Validate DICOM magic bytes
-  if (!isDicom(file.buffer)) {
-    throw new HttpError(400, { error: "Invalid DICOM file" });
-  }
-
   // Upload to Orthanc
   let orthancData: any;
   try {
     const { data } = await orthancClient.postInstance(file.buffer);
     orthancData = data;
   } catch (err: any) {
+    console.error(`[upload] Orthanc error — status=${err.response?.status} message=${err.message} data=${JSON.stringify(err.response?.data)}`);
     if (err.response?.status === 400) {
       throw new HttpError(400, { error: "Invalid DICOM file" });
     }
@@ -79,6 +64,7 @@ export async function uploadDicom(
   const instanceId: string = orthancData.ID;
   const studyId: string = orthancData.ParentStudy;
   const isAlreadyStored: boolean = orthancData.Status === "AlreadyStored";
+  console.log(`[upload] Orthanc response — status=${orthancData.Status} instanceId=${instanceId} studyId=${studyId} isAlreadyStored=${isAlreadyStored}`);
 
   // Fetch DICOM tags from Orthanc
   let tags: Record<string, any> = {};
@@ -101,9 +87,12 @@ export async function uploadDicom(
   const rows = extractInt(tags, "0028,0010");
   const cols = extractInt(tags, "0028,0011");
 
+  console.log(`[upload] tags — sopUid=${sopInstanceUid} patient=${patientName} modality=${modality}`);
+
   // Duplicate detected — ask the user before overwriting
   if (isAlreadyStored) {
     const existing = await repo.findBySopInstanceUid(sopInstanceUid);
+    console.log(`[upload] duplicate detected — existing in DB=${!!existing} force=${force}`);
 
     if (!force) {
       throw new HttpError(409, {

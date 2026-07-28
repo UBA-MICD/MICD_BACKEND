@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { EventEmitter } from 'events'
 import { pool } from '../../../src/db/pool'
 import * as zenodoService from '../../../src/modules/zenodo/zenodo.service'
 import { importFromZenodo } from '../../../src/modules/zenodo/zenodo-import.service'
@@ -27,6 +28,38 @@ const mockedGetStoredToken = zenodoService.getStoredToken as jest.Mock
 
 const RECORD_ID = 1234567
 const FAKE_STREAM = { pipe: jest.fn() }
+
+// Fake unzipper.Parse() output: an EventEmitter standing in for the parser
+// (with the pause/resume the real code calls) that emits 'entry' events for
+// each fixture, deferred so the real code's .on('entry'/'finish'/'error')
+// handlers are registered first. Non-dcm entries are drained immediately;
+// .dcm entries emit 'data' + 'end' on their own EventEmitter, same protocol
+// bufferEntry() expects from a real unzipper.Entry.
+function makeZipStream(entries: { path: string; content?: string }[]) {
+  const parser = Object.assign(new EventEmitter(), {
+    pause: jest.fn(),
+    resume: jest.fn(),
+  })
+
+  setImmediate(() => {
+    for (const def of entries) {
+      const entry = Object.assign(new EventEmitter(), {
+        path: def.path,
+        autodrain: jest.fn(),
+      })
+      parser.emit('entry', entry)
+      if (def.content !== undefined) {
+        setImmediate(() => {
+          entry.emit('data', Buffer.from(def.content as string))
+          entry.emit('end')
+        })
+      }
+    }
+    setImmediate(() => parser.emit('finish'))
+  })
+
+  return { pipe: () => parser }
+}
 
 const ORTHANC_OK = { ID: 'inst-abc', ParentStudy: 'study-xyz', Status: 'Success' }
 const ORTHANC_ALREADY_STORED = { ID: 'inst-abc', ParentStudy: 'study-xyz', Status: 'AlreadyStored' }
@@ -127,26 +160,41 @@ describe('importFromZenodo', () => {
     expect(result.results[0].existingStudyId).toBe('study-existing')
   })
 
-  it('skips .zip files and marks them as skipped', async () => {
+  it('extracts and imports .dcm entries found inside a .zip file, ignoring non-dcm entries', async () => {
     mockedGetStoredToken.mockResolvedValue(null)
 
     poolQuery
-      .mockResolvedValueOnce({ rows: [{ id: 42 }] })
-      .mockResolvedValueOnce({ rows: [] })  // audit STARTED
-      .mockResolvedValueOnce({ rows: [] })  // INSERT import_file (zip)
-      .mockResolvedValueOnce({ rows: [] })  // UPDATE zenodo_imports
-      .mockResolvedValueOnce({ rows: [] })  // audit COMPLETED
+      .mockResolvedValueOnce({ rows: [{ id: 42 }] })          // INSERT zenodo_imports
+      .mockResolvedValueOnce({ rows: [] })                    // audit STARTED
+      .mockResolvedValueOnce({ rows: [] })                    // INSERT import_file (zip)
+      .mockResolvedValueOnce({ rows: [] })                    // UPDATE downloading (zip)
+      .mockResolvedValueOnce({ rows: [] })                    // INSERT studies (upsert) for extracted entry
+      .mockResolvedValueOnce({ rows: [] })                    // UPDATE import_file=imported
+      .mockResolvedValueOnce({ rows: [] })                    // UPDATE zenodo_imports
+      .mockResolvedValueOnce({ rows: [] })                    // audit COMPLETED
 
-    mockedAxios.get.mockResolvedValueOnce({ data: { doi: null } } as any) // fetchRecordDoi
+    mockedAxios.get
+      .mockResolvedValueOnce({ data: { doi: null } } as any)  // fetchRecordDoi
+      .mockResolvedValueOnce({
+        data: makeZipStream([
+          { path: 'readme.txt', content: 'not a dicom' },
+          { path: 'scan_001.dcm', content: 'dicom-bytes' },
+        ]),
+      } as any)                                                // zip stream download
+      .mockResolvedValueOnce({ data: TAGS } as any)            // fetchTags for the extracted entry
+
+    mockedAxios.post.mockResolvedValueOnce({ data: ORTHANC_OK } as any) // postInstance for extracted entry
 
     const result = await importFromZenodo({
       ...IMPORT_OPTS,
       files: [{ fileKey: 'dataset.zip', fileSize: 5000 }],
     })
 
-    expect(result.results[0].status).toBe('skipped')
-    expect(result.results[0].error).toContain('ZIP')
-    expect(result.imported).toBe(0)
+    expect(result.imported).toBe(1)
+    expect(result.failed).toBe(0)
+    expect(result.results).toHaveLength(1) // readme.txt was silently ignored, not reported as a result
+    expect(result.results[0].status).toBe('imported')
+    expect(result.results[0].fileKey).toBe('scan_001.dcm')
   })
 
   it('returns status=failed when Orthanc rejects the file as non-DICOM (400)', async () => {
