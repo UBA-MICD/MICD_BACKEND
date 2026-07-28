@@ -3,6 +3,7 @@ import { zenodoClient } from "../../clients/zenodo.client";
 import { type ZenodoEnvironment, getStoredToken } from "./zenodo.service";
 import { fetchRecordMeta } from "./zenodo-import.service";
 import { throttle } from "./zenodo-rate-limit.service";
+import { logAction, AUDIT_ACTIONS } from "../../shared/audit";
 
 const VALID_INTERVALS = [6, 12, 24, 168] as const;
 export type SyncInterval = (typeof VALID_INTERVALS)[number];
@@ -127,6 +128,13 @@ export async function runSync(): Promise<SyncResult> {
   );
   const logId = logRows[0].id;
 
+  await logAction({
+    userId: null,
+    action: AUDIT_ACTIONS.ZENODO_SYNC_STARTED,
+    resourceId: `sync-${logId}`,
+    ip: "system",
+  });
+
   let recordsChecked = 0;
   let newVersions = 0;
   let errors = 0;
@@ -159,6 +167,14 @@ export async function runSync(): Promise<SyncResult> {
       [recordsChecked, newVersions, errors, logId],
     );
     await pool.query("UPDATE zenodo_sync_config SET last_run_at=NOW() WHERE id=1");
+
+    await logAction({
+      userId: null,
+      action: AUDIT_ACTIONS.ZENODO_SYNC_COMPLETED,
+      resourceId: `sync-${logId}`,
+      ip: "system",
+      detail: { recordsChecked, newVersions, errors },
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     await pool.query(
@@ -167,6 +183,13 @@ export async function runSync(): Promise<SyncResult> {
        WHERE id=$5`,
       [recordsChecked, newVersions, errors, message, logId],
     );
+    await logAction({
+      userId: null,
+      action: AUDIT_ACTIONS.ZENODO_SYNC_FAILED,
+      resourceId: `sync-${logId}`,
+      ip: "system",
+      detail: { error: message, recordsChecked, newVersions, errors },
+    });
     throw err;
   }
 

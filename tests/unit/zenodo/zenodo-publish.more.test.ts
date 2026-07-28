@@ -19,6 +19,7 @@ jest.mock("../../../src/shared/audit", () => ({
     ZENODO_STUDY_PUBLISHED: "ZENODO_STUDY_PUBLISHED",
     ZENODO_PUBLISH_FAILED: "ZENODO_PUBLISH_FAILED",
   },
+  logAction: jest.fn().mockResolvedValue(undefined),
   logActionWithClient: jest.fn(),
 }));
 // FIFTY_GB shrunk to 1 MB so the size guard is reachable with small buffers

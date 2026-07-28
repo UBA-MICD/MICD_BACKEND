@@ -595,6 +595,14 @@ export async function importFromZenodo(opts: ImportOptions): Promise<ImportResul
     action: AUDIT_ACTIONS.ZENODO_IMPORT_COMPLETED,
     resourceId: `${recordId}::import-${importId}::${finalStatus}`,
     ip,
+    detail: {
+      imported,
+      duplicates,
+      failed,
+      errors: results
+        .filter((r) => r.status === "failed")
+        .map((r) => ({ file: r.fileKey, error: r.error })),
+    },
   });
 
   return { importId, sourceDoi, results, imported, duplicates, failed, largeSizeWarning };
@@ -621,9 +629,10 @@ async function logAction(entry: {
   action: string;
   resourceId: string;
   ip: string;
+  detail?: Record<string, unknown>;
 }): Promise<void> {
   await pool.query(
-    'INSERT INTO audit_log (user_id, action, resource_id, "timestamp", ip) VALUES ($1,$2,$3,NOW(),$4)',
-    [entry.userId, entry.action, entry.resourceId, entry.ip],
+    'INSERT INTO audit_log (user_id, action, resource_id, "timestamp", ip, detail) VALUES ($1,$2,$3,NOW(),$4,$5)',
+    [entry.userId, entry.action, entry.resourceId, entry.ip, entry.detail ? JSON.stringify(entry.detail) : null],
   );
 }
