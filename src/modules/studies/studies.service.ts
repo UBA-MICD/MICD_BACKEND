@@ -4,6 +4,12 @@ import {
   buildInstancesPayload,
   InstancesPayload,
 } from "../../shared/instances-util";
+import { zenodoClient } from "../../clients/zenodo.client";
+import {
+  getZenodoRecord,
+  ZenodoRecordSummary,
+} from "../zenodo/zenodo-search.service";
+import { getStoredToken } from "../zenodo/zenodo.service";
 import * as repo from "./studies.repository";
 import { StudyFilters } from "./studies.repository";
 
@@ -159,5 +165,140 @@ export async function getStudyThumbnail(studyId: string): Promise<Thumbnail> {
       });
     }
     throw ORTHANC_UNAVAILABLE(err.message);
+  }
+}
+
+// ── Zenodo detail ─────────────────────────────────────────────────────────────
+
+export interface StudyZenodoDetail {
+  doi: string;
+  status: "published" | "imported" | "both";
+  record: import("../zenodo/zenodo-search.service").ZenodoRecordDetail | null;
+  versions: ZenodoRecordSummary[];
+  stale: boolean;
+  lastSyncedAt: string | null;
+  downloads: number | null;
+  newVersionAvailable: boolean;
+  latestVersion: string | null;
+}
+
+function recordIdFromDoi(doi: string): number | null {
+  // Zenodo DOIs: "10.5281/zenodo.{id}" — extract the trailing integer after the dot
+  const match = doi.match(/\.(\d+)$/);
+  if (!match) return null;
+  const n = parseInt(match[1], 10);
+  return isNaN(n) ? null : n;
+}
+
+/** GET /api/v1/studies/:studyId/zenodo — live Zenodo metadata with local fallback. */
+export async function getStudyZenodoDetail(
+  studyId: string,
+): Promise<StudyZenodoDetail> {
+  const meta = await repo.findStudyZenodoMeta(studyId);
+  if (!meta) throw new HttpError(404, { error: "Study not found" });
+
+  const hasDoi = Boolean(meta.zenodo_doi);
+  const hasSourceDoi = Boolean(meta.zenodo_source_doi);
+  if (!hasDoi && !hasSourceDoi) {
+    throw new HttpError(404, { error: "Study has no Zenodo association" });
+  }
+
+  const status: StudyZenodoDetail["status"] =
+    hasDoi && hasSourceDoi ? "both" : hasDoi ? "published" : "imported";
+
+  const doi = (meta.zenodo_doi ?? meta.zenodo_source_doi)!;
+  const recordId = hasDoi
+    ? recordIdFromDoi(meta.zenodo_doi!)
+    : meta.zenodo_source_record_id;
+
+  // 10.5072/* = sandbox, 10.5281/* = production
+  const environment: "sandbox" | "production" = doi.startsWith("10.5072/")
+    ? "sandbox"
+    : "production";
+
+  const lastSyncedAt = (
+    meta.zenodo_published_at ?? meta.zenodo_imported_at
+  )?.toISOString() ?? null;
+
+  try {
+    let liveRecord: import("../zenodo/zenodo-search.service").ZenodoRecordDetail | null = null;
+    let versions: ZenodoRecordSummary[] = [];
+    let downloads: number | null = null;
+    let latestVersion: string | null = null;
+
+    if (recordId !== null) {
+      liveRecord = await getZenodoRecord(recordId, environment);
+
+      const token = await getStoredToken(environment).catch(() => null);
+      try {
+        const { data } = await zenodoClient.getRecord(recordId, token, environment);
+        downloads = data.stats?.downloads ?? null;
+      } catch {
+        // non-fatal
+      }
+    }
+
+    if (meta.zenodo_concept_record_id !== null) {
+      const token = await getStoredToken(environment).catch(() => null);
+      try {
+        const { data } = await zenodoClient.searchRecords(
+          {
+            q: `conceptrecid:${meta.zenodo_concept_record_id}`,
+            all_versions: "true",
+            size: 50,
+            sort: "version",
+          },
+          token,
+          environment,
+        );
+        const hits: Record<string, any>[] = data.hits?.hits ?? [];
+        versions = hits.map((h: Record<string, any>) => {
+          const m = h.metadata ?? {};
+          return {
+            id: h.id,
+            doi: h.doi ?? null,
+            title: m.title ?? "",
+            authors: (m.creators ?? []).map((c: any) => ({ name: c.name ?? "" })),
+            publicationDate: m.publication_date ?? null,
+            license: m.license?.id ?? m.license ?? null,
+            totalSize: (h.files ?? []).reduce((s: number, f: any) => s + (f.size ?? 0), 0),
+            numFiles: (h.files ?? []).length,
+            importable: false,
+            url: h.links?.html ?? `https://zenodo.org/record/${h.id}`,
+          } satisfies ZenodoRecordSummary;
+        });
+        const newest = versions[versions.length - 1];
+        latestVersion = newest?.publicationDate ?? null;
+      } catch {
+        // non-fatal
+      }
+    }
+
+    return {
+      doi,
+      status,
+      record: liveRecord,
+      versions,
+      stale: false,
+      lastSyncedAt,
+      downloads,
+      newVersionAvailable: meta.zenodo_new_version_available ?? false,
+      latestVersion,
+    };
+  } catch (err: any) {
+    if (isHttpError(err)) throw err;
+
+    // Zenodo unreachable — return local data with stale flag
+    return {
+      doi,
+      status,
+      record: null,
+      versions: [],
+      stale: true,
+      lastSyncedAt,
+      downloads: null,
+      newVersionAvailable: meta.zenodo_new_version_available ?? false,
+      latestVersion: null,
+    };
   }
 }

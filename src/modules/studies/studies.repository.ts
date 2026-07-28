@@ -6,6 +6,7 @@ export interface StudyFilters {
   dateFrom: string | null;
   dateTo: string | null;
   search: string | null;
+  zenodoLinked: boolean | null;
 }
 
 // Shared WHERE clause for the paginated listing — parameterized so both the
@@ -18,10 +19,11 @@ const FILTER_WHERE = `
     $4::text IS NULL
     OR patient_name ILIKE '%' || $4 || '%'
     OR patient_id   ILIKE '%' || $4 || '%'
-  )`;
+  )
+  AND ($5::bool IS NULL OR ($5 = true AND (zenodo_doi IS NOT NULL OR zenodo_source_doi IS NOT NULL)))`;
 
-function filterArgs(f: StudyFilters): (string | null)[] {
-  return [f.modality, f.dateFrom, f.dateTo, f.search];
+function filterArgs(f: StudyFilters): (string | boolean | null)[] {
+  return [f.modality, f.dateFrom, f.dateTo, f.search, f.zenodoLinked];
 }
 
 /** The first stored instance id for a study, in insertion order, or null. */
@@ -72,6 +74,50 @@ export async function countStudies(filters: StudyFilters): Promise<number> {
   return parseInt(rows[0].total, 10);
 }
 
+export interface StudyZenodoMeta {
+  zenodo_doi: string | null;
+  zenodo_published_at: Date | null;
+  zenodo_source_doi: string | null;
+  zenodo_source_record_id: number | null;
+  zenodo_imported_at: Date | null;
+  zenodo_version: string | null;
+  zenodo_concept_record_id: number | null;
+  zenodo_new_version_available: boolean | null;
+  patient_name: string | null;
+  study_date: string | null;
+  modality: string | null;
+}
+
+/** Zenodo-related columns for a single study, or null if not found. */
+export async function findStudyZenodoMeta(
+  studyId: string,
+): Promise<StudyZenodoMeta | null> {
+  const { rows } = await pool.query<StudyZenodoMeta>(
+    `SELECT
+       MAX(zenodo_doi)                    AS zenodo_doi,
+       MAX(zenodo_published_at)           AS zenodo_published_at,
+       MAX(zenodo_source_doi)             AS zenodo_source_doi,
+       MAX(zenodo_source_record_id)       AS zenodo_source_record_id,
+       MAX(zenodo_imported_at)            AS zenodo_imported_at,
+       MAX(zenodo_version)                AS zenodo_version,
+       MAX(zenodo_concept_record_id)      AS zenodo_concept_record_id,
+       BOOL_OR(zenodo_new_version_available) AS zenodo_new_version_available,
+       MAX(patient_name)                  AS patient_name,
+       MAX(study_date)                    AS study_date,
+       MAX(modality)                      AS modality
+     FROM studies
+     WHERE orthanc_study_id = $1`,
+    [studyId],
+  );
+  // GROUP BY is absent — aggregate over all instances of the study. If the
+  // study doesn't exist at all, the aggregate returns one row with all NULLs.
+  const row = rows[0];
+  if (!row || (row.zenodo_doi === null && row.zenodo_source_doi === null && row.patient_name === null)) {
+    return null;
+  }
+  return row;
+}
+
 /** One page of studies, each collapsed to a single row per orthanc_study_id. */
 export async function findStudies(
   filters: StudyFilters,
@@ -101,7 +147,7 @@ export async function findStudies(
     WHERE ${FILTER_WHERE}
     GROUP BY orthanc_study_id
     ORDER BY MAX(uploaded_at) DESC
-    LIMIT $5 OFFSET $6
+    LIMIT $6 OFFSET $7
   `,
     [...filterArgs(filters), limit, offset],
   );
