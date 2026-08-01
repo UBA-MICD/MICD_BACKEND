@@ -3,7 +3,11 @@ import { app } from "./app";
 import { serverConfig } from "./config/env";
 import { runMigrations } from "./db/migrate";
 import { checkAllEnvironments } from "./modules/zenodo/zenodo.service";
-import { shouldRunSync, runSync } from "./modules/zenodo/zenodo-sync.service";
+import {
+  shouldRunSync,
+  runSync,
+  recoverStaleSyncLocks,
+} from "./modules/zenodo/zenodo-sync.service";
 
 /**
  * Process entry point: apply migrations (which also seed the shared test user)
@@ -13,6 +17,7 @@ import { shouldRunSync, runSync } from "./modules/zenodo/zenodo-sync.service";
  * in tests never starts them.
  */
 runMigrations()
+  .then(() => recoverStaleSyncLocks())
   .then(() => {
     app.listen(serverConfig.port, () =>
       console.log(`MICD backend listening on port ${serverConfig.port}`),

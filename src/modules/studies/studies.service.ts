@@ -10,6 +10,11 @@ import {
   ZenodoRecordSummary,
 } from "../zenodo/zenodo-search.service";
 import { getStoredToken } from "../zenodo/zenodo.service";
+import {
+  detectNewVersion,
+  type ImportedRecord,
+} from "../zenodo/zenodo-sync.service";
+import { logAction, AUDIT_ACTIONS } from "../../shared/audit";
 import * as repo from "./studies.repository";
 import { StudyFilters } from "./studies.repository";
 
@@ -300,5 +305,74 @@ export async function getStudyZenodoDetail(
       newVersionAvailable: meta.zenodo_new_version_available ?? false,
       latestVersion: null,
     };
+  }
+}
+
+export interface StudyZenodoCheckResult {
+  upToDate: boolean;
+  newVersionAvailable: boolean;
+  latestVersion: string | null;
+  latestPublishedAt: string | null;
+  checkedAt: string;
+}
+const inFlightChecks = new Set<string>();
+
+/** POST /api/v1/studies/:studyId/zenodo/check — forces a fresh version check against Zenodo. */
+export async function checkStudyZenodoVersion(
+  studyId: string,
+  actor: { userId: number; ip: string },
+): Promise<StudyZenodoCheckResult> {
+  if (inFlightChecks.has(studyId)) {
+    throw new HttpError(409, { error: "Ya hay una verificación en curso para este estudio" });
+  }
+  inFlightChecks.add(studyId);
+
+  try {
+    const meta = await repo.findStudyZenodoMeta(studyId);
+    if (!meta) throw new HttpError(404, { error: "Study not found" });
+    if (meta.zenodo_source_record_id === null) {
+      throw new HttpError(404, { error: "Study has no Zenodo import association" });
+    }
+
+    const environment: "sandbox" | "production" = meta.zenodo_source_doi?.startsWith("10.5072/")
+      ? "sandbox"
+      : "production";
+
+    const record: ImportedRecord = {
+      record_id: meta.zenodo_source_record_id,
+      environment,
+      version: meta.zenodo_version,
+      concept_record_id: meta.zenodo_concept_record_id,
+    };
+
+    const token = await getStoredToken(environment).catch(() => null);
+
+    const check = await detectNewVersion(record, token).catch(() => {
+      throw new HttpError(502, { error: "No se pudo contactar a Zenodo. Intentá de nuevo más tarde." });
+    });
+
+    await repo.setNewVersionAvailable(record.record_id, check.hasNewVersion);
+
+    await logAction({
+      userId: actor.userId,
+      action: AUDIT_ACTIONS.ZENODO_MANUAL_CHECK,
+      resourceId: studyId,
+      ip: actor.ip,
+      detail: {
+        recordId: record.record_id,
+        newVersionAvailable: check.hasNewVersion,
+        latestVersion: check.latestVersion,
+      },
+    });
+
+    return {
+      upToDate: !check.hasNewVersion,
+      newVersionAvailable: check.hasNewVersion,
+      latestVersion: check.hasNewVersion ? check.latestVersion : null,
+      latestPublishedAt: check.hasNewVersion ? check.latestPublishedAt : null,
+      checkedAt: new Date().toISOString(),
+    };
+  } finally {
+    inFlightChecks.delete(studyId);
   }
 }

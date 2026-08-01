@@ -29,6 +29,7 @@ zenodoRouter.get("/config/sync", ctrl.getSyncConfiguration);
 zenodoRouter.put("/config/sync", ctrl.setSyncConfiguration);
 zenodoRouter.post("/config/sync/run", ctrl.runSyncNow);
 zenodoRouter.get("/config/sync/logs", ctrl.getSyncLogList);
+zenodoRouter.get("/config/sync/status", ctrl.getSyncStatusHandler);
 
 // ── Import (ZEN-07) ──────────────────────────────────────────────────────────
 zenodoRouter.post("/import", ctrl.importRecord);

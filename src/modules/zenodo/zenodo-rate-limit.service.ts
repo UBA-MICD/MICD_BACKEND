@@ -34,12 +34,20 @@ async function recordRequest(environment: ZenodoEnvironment): Promise<void> {
   await pool.query("INSERT INTO zenodo_api_requests (environment) VALUES ($1)", [environment]);
 }
 
+export interface ThrottleOptions {
+  /** Called right before an enforced wait, so callers can surface the pause (e.g. persist it for a status endpoint). */
+  onWait?: (waitMs: number, resumesAt: Date) => void | Promise<void>;
+}
+
 /**
  * Call this before every Zenodo API request.
  * If the sliding-window counter is at or above THROTTLE_AT (50/min),
  * sleeps until the oldest request in the window expires, then records the new request.
  */
-export async function throttle(environment: ZenodoEnvironment): Promise<void> {
+export async function throttle(
+  environment: ZenodoEnvironment,
+  options?: ThrottleOptions,
+): Promise<void> {
   await pruneOldRequests();
 
   const count = await getRequestCount(environment);
@@ -53,6 +61,7 @@ export async function throttle(environment: ZenodoEnvironment): Promise<void> {
     if (rows[0]?.oldest) {
       const expiresAt = new Date(rows[0].oldest.getTime() + WINDOW_MS);
       const waitMs = Math.max(0, expiresAt.getTime() - Date.now()) + 100;
+      await options?.onWait?.(waitMs, expiresAt);
       await sleep(waitMs);
     }
   }

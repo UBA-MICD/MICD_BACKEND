@@ -38,6 +38,11 @@ studiesRouter.get(
   requireAuth,
   ctrl.getStudyZenodo,
 );
+studiesRouter.post(
+  "/api/v1/studies/:studyId/zenodo/check",
+  requireAuth,
+  ctrl.checkStudyZenodo,
+);
 studiesRouter.get(
   "/api/v1/studies/:studyId/thumbnail",
   requireAuth,

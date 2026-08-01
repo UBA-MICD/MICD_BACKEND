@@ -25,7 +25,9 @@ import {
   setSyncConfig,
   runSync,
   getSyncLogs,
+  getSyncStatus,
   isValidInterval,
+  SyncAlreadyRunningError,
   type SyncInterval,
 } from "./zenodo-sync.service";
 import { getQuotaStatus, getRequestCount, THROTTLE_AT } from "./zenodo-rate-limit.service";
@@ -489,9 +491,9 @@ export const setSyncConfiguration: RequestHandler = async (req, res) => {
 };
 
 // Manual trigger
-export const runSyncNow: RequestHandler = async (_req, res) => {
+export const runSyncNow: RequestHandler = async (req, res) => {
   try {
-    const result = await runSync();
+    const result = await runSync({ userId: req.user!.sub, ip: req.ip ?? "" });
     res.json({
       log_id: result.logId,
       records_checked: result.recordsChecked,
@@ -499,6 +501,13 @@ export const runSyncNow: RequestHandler = async (_req, res) => {
       errors: result.errors,
     });
   } catch (err: unknown) {
+    if (err instanceof SyncAlreadyRunningError) {
+      res.status(409).json({
+        error: "Ya hay una sincronización en curso",
+        status: await getSyncStatus(),
+      });
+      return;
+    }
     const message = err instanceof Error ? err.message : String(err);
     console.error("Error durante la sincronización manual:", message);
     res.status(500).json({ error: "Error durante la sincronización" });
@@ -514,6 +523,16 @@ export const getSyncLogList: RequestHandler = async (req, res) => {
     const message = err instanceof Error ? err.message : String(err);
     console.error("Error al obtener los logs de sincronización:", message);
     res.status(500).json({ error: "Error al obtener los logs" });
+  }
+};
+
+export const getSyncStatusHandler: RequestHandler = async (_req, res) => {
+  try {
+    res.json(await getSyncStatus());
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("Error al obtener el estado de la sincronización:", message);
+    res.status(500).json({ error: "Error al obtener el estado" });
   }
 };
 
