@@ -60,25 +60,6 @@ export class ZenodoPublishError extends Error {
   }
 }
 
-async function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
-  let lastErr: unknown;
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      return await fn();
-    } catch (err) {
-      lastErr = err;
-      if (attempt < maxAttempts) {
-        await sleep(1000 * Math.pow(2, attempt - 1));
-      }
-    }
-  }
-  throw lastErr;
-}
-
 async function createZenodoDeposition(
   token: string,
   environment: ZenodoEnvironment,
@@ -117,8 +98,9 @@ async function uploadFileToBucket(
   bucketUrl: string,
   filename: string,
   data: Buffer,
+  environment: ZenodoEnvironment,
 ): Promise<void> {
-  await zenodoClient.uploadFileToBucket(token, bucketUrl, filename, data);
+  await zenodoClient.uploadFileToBucket(token, bucketUrl, filename, data, environment);
 }
 
 async function publishZenodoDeposition(
@@ -224,11 +206,9 @@ export async function publishStudy(opts: PublishStudyOptions): Promise<PublishSt
   }
 
   // Create Zenodo deposition
-  const { zenodoId, bucketUrl } = await withRetry(() =>
-    createZenodoDeposition(token, environment),
-  );
+  const { zenodoId, bucketUrl } = await createZenodoDeposition(token, environment);
 
-  await withRetry(() => setZenodoMetadata(token, environment, zenodoId, metadata));
+  await setZenodoMetadata(token, environment, zenodoId, metadata);
 
   // Persist deposition record
   const { rows: depRows } = await pool.query<{ id: number }>(
@@ -276,7 +256,7 @@ export async function publishStudy(opts: PublishStudyOptions): Promise<PublishSt
     ]);
     try {
       const buf = await fetchOrthancFile(fileRow.orthanc_instance_id);
-      await withRetry(() => uploadFileToBucket(token, bucketUrl, fileRow.filename, buf));
+      await uploadFileToBucket(token, bucketUrl, fileRow.filename, buf, environment);
       await pool.query(
         "UPDATE zenodo_deposition_files SET status=$1, uploaded_at=NOW(), attempts=attempts+1 WHERE id=$2",
         ["completed", fileRow.id],
@@ -310,7 +290,7 @@ export async function publishStudy(opts: PublishStudyOptions): Promise<PublishSt
   // Publish
   let doi: string;
   try {
-    doi = await withRetry(() => publishZenodoDeposition(token, environment, zenodoId));
+    doi = await publishZenodoDeposition(token, environment, zenodoId);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     await pool.query(
@@ -390,7 +370,7 @@ export async function retryFailedFiles(
     ]);
     try {
       const buf = await fetchOrthancFile(fileRow.orthanc_instance_id);
-      await withRetry(() => uploadFileToBucket(token, dep.bucket_url, fileRow.filename, buf));
+      await uploadFileToBucket(token, dep.bucket_url, fileRow.filename, buf, dep.environment);
       await pool.query(
         "UPDATE zenodo_deposition_files SET status=$1, uploaded_at=NOW(), attempts=attempts+1 WHERE id=$2",
         ["completed", fileRow.id],
@@ -414,9 +394,7 @@ export async function retryFailedFiles(
     );
     if (parseInt(remaining[0].count, 10) === 0) {
       try {
-        const doi = await withRetry(() =>
-          publishZenodoDeposition(token, dep.environment, dep.zenodo_id),
-        );
+        const doi = await publishZenodoDeposition(token, dep.environment, dep.zenodo_id);
         const client = await pool.connect();
         try {
           await client.query("BEGIN");
