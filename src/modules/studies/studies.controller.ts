@@ -104,7 +104,7 @@ export const getStudyZenodo: RequestHandler = async (req, res) => {
 export const checkStudyZenodo: RequestHandler = async (req, res) => {
   try {
     const result = await studiesService.checkStudyZenodoVersion(req.params.studyId, {
-      userId: req.user!.sub,
+      userId: Number(req.user!.sub),
       ip: req.ip ?? "",
     });
     res.json(result);
