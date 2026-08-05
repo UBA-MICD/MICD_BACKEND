@@ -7,7 +7,10 @@ import {
   shouldRunSync,
   runSync,
   getSyncLogs,
+  getSyncStatus,
+  recoverStaleSyncLocks,
   isValidInterval,
+  SyncAlreadyRunningError,
 } from '../../../src/modules/zenodo/zenodo-sync.service'
 
 jest.mock('axios')
@@ -195,5 +198,81 @@ describe('getSyncLogs', () => {
     const result = await getSyncLogs()
     expect(result).toHaveLength(2)
     expect(result[0].id).toBe(2)
+  })
+})
+
+describe('runSync — concurrency lock', () => {
+  it('throws SyncAlreadyRunningError when the lock INSERT returns no row', async () => {
+    poolQuery.mockResolvedValueOnce({ rows: [] }) // ON CONFLICT DO NOTHING — someone else is running
+
+    await expect(runSync()).rejects.toThrow(SyncAlreadyRunningError)
+    // No ZENODO_SYNC_FAILED log write should follow — the lock rejection isn't a run failure
+    const failedUpdate = poolQuery.mock.calls.find(
+      (c) => typeof c[0] === 'string' && c[0].includes("status='failed'"),
+    )
+    expect(failedUpdate).toBeUndefined()
+  })
+
+  it('passes triggeredBy through to the audit log for a manual run', async () => {
+    poolQuery
+      .mockResolvedValueOnce({ rows: [{ id: 5 }] }) // acquireSyncLock
+      .mockResolvedValueOnce({ rows: [] })          // logAction STARTED
+      .mockResolvedValueOnce({ rows: [] })          // getImportedRecords (empty)
+      .mockResolvedValue({ rows: [] })
+
+    await runSync({ userId: 7, ip: '10.0.0.1' })
+
+    const insertAuditCalls = poolQuery.mock.calls.filter(
+      (c) => typeof c[0] === 'string' && c[0].includes('INSERT INTO audit_log'),
+    )
+    expect(insertAuditCalls.length).toBeGreaterThan(0)
+    expect(insertAuditCalls[0][1]).toEqual(
+      expect.arrayContaining([7, 'ZENODO_SYNC_STARTED', 'sync-5', '10.0.0.1']),
+    )
+  })
+})
+
+describe('getSyncStatus', () => {
+  it('returns an idle status when no sync has ever run', async () => {
+    poolQuery.mockResolvedValueOnce({ rows: [] })
+    const status = await getSyncStatus()
+    expect(status).toMatchObject({ running: false, status: 'idle', logId: null })
+  })
+
+  it('reflects the latest log row, including pause and progress fields', async () => {
+    const startedAt = new Date()
+    const pausedUntil = new Date(Date.now() + 60_000)
+    poolQuery.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 42,
+          started_at: startedAt,
+          completed_at: null,
+          status: 'running',
+          records_checked: 15,
+          total_records: 48,
+          new_versions: 2,
+          errors: 0,
+          error_detail: null,
+          paused_until: pausedUntil,
+        },
+      ],
+    })
+
+    const status = await getSyncStatus()
+    expect(status.running).toBe(true)
+    expect(status.recordsChecked).toBe(15)
+    expect(status.totalRecords).toBe(48)
+    expect(status.pausedUntil).toBe(pausedUntil.toISOString())
+  })
+})
+
+describe('recoverStaleSyncLocks', () => {
+  it('flips any running log row to failed', async () => {
+    poolQuery.mockResolvedValueOnce({ rows: [] })
+    await recoverStaleSyncLocks()
+    const call = poolQuery.mock.calls[0]
+    expect(call[0]).toContain("status='failed'")
+    expect(call[0]).toContain("WHERE status='running'")
   })
 })

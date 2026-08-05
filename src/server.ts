@@ -4,7 +4,11 @@ import { serverConfig, tlsConfig } from "./config/env";
 import { runMigrations } from "./db/migrate";
 import { createHttpServer } from "./shared/http-server";
 import { checkAllEnvironments } from "./modules/zenodo/zenodo.service";
-import { shouldRunSync, runSync } from "./modules/zenodo/zenodo-sync.service";
+import {
+  shouldRunSync,
+  runSync,
+  recoverStaleSyncLocks,
+} from "./modules/zenodo/zenodo-sync.service";
 
 /**
  * Process entry point: apply migrations (which also seed the shared test user)
@@ -14,6 +18,7 @@ import { shouldRunSync, runSync } from "./modules/zenodo/zenodo-sync.service";
  * in tests never starts them.
  */
 runMigrations()
+  .then(() => recoverStaleSyncLocks())
   .then(() => {
     const server = createHttpServer(app, tlsConfig);
     server.listen(serverConfig.port, () =>

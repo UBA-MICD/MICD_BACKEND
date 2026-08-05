@@ -14,6 +14,7 @@ import {
   type ZenodoAuthor,
 } from "./zenodo-publish.service";
 import { searchZenodo, getZenodoRecord } from "./zenodo-search.service";
+import { parseZenodoInput, resolveZenodoRecord } from "./zenodo-resolve.service";
 import {
   importFromZenodo,
   getImport,
@@ -25,7 +26,9 @@ import {
   setSyncConfig,
   runSync,
   getSyncLogs,
+  getSyncStatus,
   isValidInterval,
+  SyncAlreadyRunningError,
   type SyncInterval,
 } from "./zenodo-sync.service";
 import { getQuotaStatus, getRequestCount, THROTTLE_AT } from "./zenodo-rate-limit.service";
@@ -332,7 +335,40 @@ export const getRecordDetail: RequestHandler = async (req, res) => {
   }
 };
 
-// ── Import (ZEN-07) ──────────────────────────────────────────────────────────
+export const resolveRecord: RequestHandler = async (req, res) => {
+  const input = (req.query.input as string) ?? "";
+  const parsed = parseZenodoInput(input);
+  if (!parsed) {
+    res.status(400).json({
+      error: "Este DOI no pertenece a Zenodo — solo se soporta importación desde Zenodo",
+    });
+    return;
+  }
+
+  try {
+    const resolved = await resolveZenodoRecord(parsed.recordId, parsed.environment);
+    res.json(resolved);
+  } catch (err: unknown) {
+    const axiosErr = err as any;
+    if (axiosErr?.response?.status === 404) {
+      res.status(404).json({ error: "Record no encontrado en Zenodo" });
+      return;
+    }
+    const isNetworkErr =
+      axiosErr?.code === "ECONNABORTED" ||
+      axiosErr?.code === "ECONNREFUSED" ||
+      axiosErr?.code === "ETIMEDOUT";
+    if (isNetworkErr || axiosErr?.response?.status >= 500) {
+      res.status(503).json({
+        error: "Zenodo no está disponible en este momento. Intentá de nuevo más tarde.",
+      });
+      return;
+    }
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("Error al resolver el DOI de Zenodo:", message);
+    res.status(500).json({ error: "Error al resolver el DOI" });
+  }
+};
 
 function isFileSpecArray(value: unknown): value is ImportFileSpec[] {
   return (
@@ -489,9 +525,9 @@ export const setSyncConfiguration: RequestHandler = async (req, res) => {
 };
 
 // Manual trigger
-export const runSyncNow: RequestHandler = async (_req, res) => {
+export const runSyncNow: RequestHandler = async (req, res) => {
   try {
-    const result = await runSync();
+    const result = await runSync({ userId: req.user!.sub, ip: req.ip ?? "" });
     res.json({
       log_id: result.logId,
       records_checked: result.recordsChecked,
@@ -499,6 +535,13 @@ export const runSyncNow: RequestHandler = async (_req, res) => {
       errors: result.errors,
     });
   } catch (err: unknown) {
+    if (err instanceof SyncAlreadyRunningError) {
+      res.status(409).json({
+        error: "Ya hay una sincronización en curso",
+        status: await getSyncStatus(),
+      });
+      return;
+    }
     const message = err instanceof Error ? err.message : String(err);
     console.error("Error durante la sincronización manual:", message);
     res.status(500).json({ error: "Error durante la sincronización" });
@@ -517,7 +560,16 @@ export const getSyncLogList: RequestHandler = async (req, res) => {
   }
 };
 
-// ── Quota & rate limit (ZEN-17) ──────────────────────────────────────────────
+export const getSyncStatusHandler: RequestHandler = async (_req, res) => {
+  try {
+    res.json(await getSyncStatus());
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("Error al obtener el estado de la sincronización:", message);
+    res.status(500).json({ error: "Error al obtener el estado" });
+  }
+};
+
 
 // GET /api/v1/zenodo/quota?environment=production
 export const getQuota: RequestHandler = async (req, res) => {

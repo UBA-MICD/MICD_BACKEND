@@ -88,6 +88,16 @@ export interface StudyZenodoMeta {
   modality: string | null;
 }
 
+export async function setNewVersionAvailable(
+  recordId: number,
+  value: boolean,
+): Promise<void> {
+  await pool.query(
+    "UPDATE studies SET zenodo_new_version_available = $1 WHERE zenodo_source_record_id = $2",
+    [value, recordId],
+  );
+}
+
 /** Zenodo-related columns for a single study, or null if not found. */
 export async function findStudyZenodoMeta(
   studyId: string,

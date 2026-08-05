@@ -75,6 +75,39 @@ describe('throttle', () => {
     const envCalls = calls.filter((c) => Array.isArray(c[1]) && c[1].includes('sandbox'))
     expect(envCalls.length).toBeGreaterThanOrEqual(1)
   })
+
+  it('invokes onWait with the wait duration and resume time before sleeping when over threshold', async () => {
+    jest.useFakeTimers()
+    const oldestTime = new Date(Date.now() - 59_500)
+    poolQuery
+      .mockResolvedValueOnce({ rows: [] })                                // prune
+      .mockResolvedValueOnce({ rows: [{ count: String(THROTTLE_AT) }] })  // getRequestCount
+      .mockResolvedValueOnce({ rows: [{ oldest: oldestTime }] })          // MIN(requested_at)
+      .mockResolvedValueOnce({ rows: [] })                                // recordRequest
+
+    const onWait = jest.fn().mockResolvedValue(undefined)
+    const p = throttle('production', { onWait })
+    await jest.runAllTimersAsync()
+    await p
+    jest.useRealTimers()
+
+    expect(onWait).toHaveBeenCalledTimes(1)
+    const [waitMs, resumesAt] = onWait.mock.calls[0]
+    expect(waitMs).toBeGreaterThan(0)
+    expect(resumesAt).toBeInstanceOf(Date)
+  })
+
+  it('does not invoke onWait when under threshold', async () => {
+    poolQuery
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ count: '10' }] })
+      .mockResolvedValueOnce({ rows: [] })
+
+    const onWait = jest.fn()
+    await throttle('production', { onWait })
+
+    expect(onWait).not.toHaveBeenCalled()
+  })
 })
 
 describe('getQuotaStatus', () => {

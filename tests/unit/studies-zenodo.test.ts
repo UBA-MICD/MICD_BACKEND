@@ -8,6 +8,7 @@ import { jest, describe, it, expect, beforeEach } from "@jest/globals";
 
 jest.mock("../../src/modules/studies/studies.repository", () => ({
   findStudyZenodoMeta: jest.fn(),
+  setNewVersionAvailable: jest.fn(),
 }));
 jest.mock("../../src/modules/zenodo/zenodo-search.service", () => ({
   getZenodoRecord: jest.fn(),
@@ -21,8 +22,18 @@ jest.mock("../../src/clients/zenodo.client", () => ({
     searchRecords: jest.fn(),
   },
 }));
+jest.mock("../../src/modules/zenodo/zenodo-sync.service", () => ({
+  detectNewVersion: jest.fn(),
+}));
+jest.mock("../../src/shared/audit", () => ({
+  logAction: jest.fn(),
+  AUDIT_ACTIONS: { ZENODO_MANUAL_CHECK: "ZENODO_MANUAL_CHECK" },
+}));
 
-import { getStudyZenodoDetail } from "../../src/modules/studies/studies.service";
+import {
+  getStudyZenodoDetail,
+  checkStudyZenodoVersion,
+} from "../../src/modules/studies/studies.service";
 
 // Access mocks via requireMock — avoids import binding issues with ts-jest
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -30,6 +41,7 @@ type AnyMock = jest.Mock<any>;
 
 const repoMock = jest.requireMock("../../src/modules/studies/studies.repository") as {
   findStudyZenodoMeta: AnyMock;
+  setNewVersionAvailable: AnyMock;
 };
 const zenodoSearchMock = jest.requireMock("../../src/modules/zenodo/zenodo-search.service") as {
   getZenodoRecord: AnyMock;
@@ -40,6 +52,12 @@ const zenodoServiceMock = jest.requireMock("../../src/modules/zenodo/zenodo.serv
 const zenodoClientMock = (jest.requireMock("../../src/clients/zenodo.client") as {
   zenodoClient: { getRecord: AnyMock; searchRecords: AnyMock };
 }).zenodoClient;
+const zenodoSyncMock = jest.requireMock("../../src/modules/zenodo/zenodo-sync.service") as {
+  detectNewVersion: AnyMock;
+};
+const auditMock = jest.requireMock("../../src/shared/audit") as {
+  logAction: AnyMock;
+};
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -234,5 +252,92 @@ describe("getStudyZenodoDetail", () => {
     const result = await getStudyZenodoDetail("study-newver");
 
     expect(result.newVersionAvailable).toBe(true);
+  });
+});
+
+describe("checkStudyZenodoVersion", () => {
+  const importedMeta = {
+    ...baseMeta,
+    zenodo_source_doi: "10.5281/zenodo.99999",
+    zenodo_source_record_id: 99999,
+    zenodo_version: "1",
+    zenodo_concept_record_id: 88888,
+  };
+
+  it("throws 404 when the study was never imported from Zenodo", async () => {
+    repoMock.findStudyZenodoMeta.mockResolvedValue({ ...baseMeta });
+    await expect(
+      checkStudyZenodoVersion("study-1", { userId: 1, ip: "127.0.0.1" }),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+
+  it("throws 404 when the study doesn't exist", async () => {
+    repoMock.findStudyZenodoMeta.mockResolvedValue(null);
+    await expect(
+      checkStudyZenodoVersion("study-1", { userId: 1, ip: "127.0.0.1" }),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+
+  it("throws 502 when Zenodo is unreachable", async () => {
+    repoMock.findStudyZenodoMeta.mockResolvedValue({ ...importedMeta });
+    zenodoSyncMock.detectNewVersion.mockRejectedValue(new Error("ECONNREFUSED"));
+
+    await expect(
+      checkStudyZenodoVersion("study-1", { userId: 1, ip: "127.0.0.1" }),
+    ).rejects.toMatchObject({ status: 502 });
+    expect(repoMock.setNewVersionAvailable).not.toHaveBeenCalled();
+  });
+
+  it("returns upToDate=true and clears the flag when no new version exists", async () => {
+    repoMock.findStudyZenodoMeta.mockResolvedValue({ ...importedMeta });
+    zenodoSyncMock.detectNewVersion.mockResolvedValue({
+      hasNewVersion: false,
+      latestVersion: null,
+      latestPublishedAt: null,
+    });
+
+    const result = await checkStudyZenodoVersion("study-1", { userId: 1, ip: "127.0.0.1" });
+
+    expect(result.upToDate).toBe(true);
+    expect(result.newVersionAvailable).toBe(false);
+    expect(repoMock.setNewVersionAvailable).toHaveBeenCalledWith(99999, false);
+    expect(auditMock.logAction).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 1, action: "ZENODO_MANUAL_CHECK", resourceId: "study-1" }),
+    );
+  });
+
+  it("returns upToDate=false with the latest version when a new version exists", async () => {
+    repoMock.findStudyZenodoMeta.mockResolvedValue({ ...importedMeta });
+    zenodoSyncMock.detectNewVersion.mockResolvedValue({
+      hasNewVersion: true,
+      latestVersion: "3",
+      latestPublishedAt: "2026-09-15",
+    });
+
+    const result = await checkStudyZenodoVersion("study-1", { userId: 1, ip: "127.0.0.1" });
+
+    expect(result.upToDate).toBe(false);
+    expect(result.newVersionAvailable).toBe(true);
+    expect(result.latestVersion).toBe("3");
+    expect(result.latestPublishedAt).toBe("2026-09-15");
+    expect(repoMock.setNewVersionAvailable).toHaveBeenCalledWith(99999, true);
+  });
+
+  it("rejects a second concurrent check for the same study", async () => {
+    repoMock.findStudyZenodoMeta.mockResolvedValue({ ...importedMeta });
+    let resolveCheck: (v: unknown) => void;
+    zenodoSyncMock.detectNewVersion.mockReturnValue(
+      new Promise((resolve) => {
+        resolveCheck = resolve;
+      }),
+    );
+
+    const first = checkStudyZenodoVersion("study-1", { userId: 1, ip: "127.0.0.1" });
+    await expect(
+      checkStudyZenodoVersion("study-1", { userId: 1, ip: "127.0.0.1" }),
+    ).rejects.toMatchObject({ status: 409 });
+
+    resolveCheck!({ hasNewVersion: false, latestVersion: null, latestPublishedAt: null });
+    await first;
   });
 });

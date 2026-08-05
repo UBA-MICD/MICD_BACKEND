@@ -100,3 +100,15 @@ export const getStudyZenodo: RequestHandler = async (req, res) => {
     sendError(res, err);
   }
 };
+
+export const checkStudyZenodo: RequestHandler = async (req, res) => {
+  try {
+    const result = await studiesService.checkStudyZenodoVersion(req.params.studyId, {
+      userId: Number(req.user!.sub),
+      ip: req.ip ?? "",
+    });
+    res.json(result);
+  } catch (err) {
+    sendError(res, err);
+  }
+};
