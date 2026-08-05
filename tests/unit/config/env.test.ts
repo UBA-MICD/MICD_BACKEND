@@ -20,6 +20,9 @@ const ENV_KEYS = [
   "JWT_REFRESH_TTL",
   "BCRYPT_ROUNDS",
   "NODE_ENV",
+  "TLS_ENABLED",
+  "TLS_CERT_PATH",
+  "TLS_KEY_PATH",
 ] as const;
 
 type EnvOverrides = Partial<Record<(typeof ENV_KEYS)[number], string>>;
@@ -152,6 +155,8 @@ describe("config/env — production JWT-secret guard", () => {
       NODE_ENV: "production",
       JWT_SECRET: "real-access",
       JWT_REFRESH_SECRET: "real-refresh",
+      DB_PASSWORD: "real-db-pass",
+      ORTHANC_PASSWORD: "real-orthanc-pass",
     });
     expect(env.jwtConfig.accessSecret).toBe("real-access");
     expect(env.jwtConfig.refreshSecret).toBe("real-refresh");
@@ -161,5 +166,84 @@ describe("config/env — production JWT-secret guard", () => {
     const env = loadEnv({ NODE_ENV: "development" });
     expect(env.jwtConfig.accessSecret).toBe(PLACEHOLDER_ACCESS);
     expect(env.jwtConfig.refreshSecret).toBe(PLACEHOLDER_REFRESH);
+  });
+});
+
+describe("config/env — production DB/Orthanc weak-password guard", () => {
+  const REAL_JWT = {
+    JWT_SECRET: "real-access",
+    JWT_REFRESH_SECRET: "real-refresh",
+  };
+
+  it("throws in production when DB_PASSWORD is left at the default", () => {
+    expect(() =>
+      loadEnv({
+        NODE_ENV: "production",
+        ...REAL_JWT,
+        ORTHANC_PASSWORD: "real-orthanc-pass",
+      }),
+    ).toThrow(/DB_PASSWORD must be set to a real secret in production/);
+  });
+
+  it("throws in production when ORTHANC_PASSWORD is left at the default", () => {
+    expect(() =>
+      loadEnv({
+        NODE_ENV: "production",
+        ...REAL_JWT,
+        DB_PASSWORD: "real-db-pass",
+      }),
+    ).toThrow(/ORTHANC_PASSWORD must be set to a real secret in production/);
+  });
+
+  it("throws in production when both DB_PASSWORD and ORTHANC_PASSWORD are left at their defaults", () => {
+    expect(() => loadEnv({ NODE_ENV: "production", ...REAL_JWT })).toThrow();
+  });
+
+  it("does not throw in production when DB_PASSWORD and ORTHANC_PASSWORD are real", () => {
+    const env = loadEnv({
+      NODE_ENV: "production",
+      ...REAL_JWT,
+      DB_PASSWORD: "real-db-pass",
+      ORTHANC_PASSWORD: "real-orthanc-pass",
+    });
+    expect(env.dbConfig.password).toBe("real-db-pass");
+    expect(env.orthancConfig.password).toBe("real-orthanc-pass");
+  });
+
+  it("tolerates default DB/Orthanc passwords outside production", () => {
+    const env = loadEnv({ NODE_ENV: "development" });
+    expect(env.dbConfig.password).toBe("micd");
+    expect(env.orthancConfig.password).toBe("orthanc");
+  });
+});
+
+describe("config/env — TLS", () => {
+  it("defaults to TLS disabled with no cert/key paths", () => {
+    const env = loadEnv();
+    expect(env.tlsConfig).toEqual({
+      enabled: false,
+      certPath: undefined,
+      keyPath: undefined,
+    });
+  });
+
+  it('enables TLS only when TLS_ENABLED is exactly "true"', () => {
+    expect(loadEnv({ TLS_ENABLED: "1" }).tlsConfig.enabled).toBe(false);
+    expect(loadEnv({ TLS_ENABLED: "false" }).tlsConfig.enabled).toBe(false);
+    expect(loadEnv({ TLS_ENABLED: "TRUE" }).tlsConfig.enabled).toBe(false);
+    expect(loadEnv({ TLS_ENABLED: "true" }).tlsConfig.enabled).toBe(true);
+  });
+
+  it("reads cert/key paths from the environment", () => {
+    const env = loadEnv({
+      TLS_ENABLED: "true",
+      TLS_CERT_PATH: "/certs/tls.crt",
+      TLS_KEY_PATH: "/certs/tls.key",
+    });
+    expect(env.tlsConfig).toEqual({
+      enabled: true,
+      certPath: "/certs/tls.crt",
+      keyPath: "/certs/tls.key",
+    });
   });
 });
