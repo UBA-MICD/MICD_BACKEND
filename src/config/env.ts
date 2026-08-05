@@ -90,7 +90,7 @@ export const zenodoTimeouts = {
   },
   /** Timeout for large file uploads/downloads to/from Zenodo. */
   get uploadMs(): number {
-    return parseInt(process.env.ZENODO_UPLOAD_TIMEOUT_MS ?? "300000", 10);
+    return parseInt(process.env.ZENODO_UPLOAD_TIMEOUT_MS ?? "1800000", 10); // 30 min
   },
 };
 

@@ -34,6 +34,11 @@ studiesRouter.get(
 );
 studiesRouter.get("/api/v1/studies", requireAuth, ctrl.listStudies);
 studiesRouter.get(
+  "/api/v1/studies/:studyId/zenodo",
+  requireAuth,
+  ctrl.getStudyZenodo,
+);
+studiesRouter.get(
   "/api/v1/studies/:studyId/thumbnail",
   requireAuth,
   ctrl.getStudyThumbnail,

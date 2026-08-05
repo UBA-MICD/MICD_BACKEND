@@ -2,7 +2,7 @@ import { pool } from "../../db/pool";
 import { zenodoClient } from "../../clients/zenodo.client";
 import { orthancClient } from "../../clients/orthanc.client";
 import { type ZenodoEnvironment, getStoredToken } from "./zenodo.service";
-import { AUDIT_ACTIONS, logActionWithClient } from "../../shared/audit";
+import { AUDIT_ACTIONS, logAction, logActionWithClient } from "../../shared/audit";
 import { throttle, FIFTY_GB } from "./zenodo-rate-limit.service";
 
 export interface ZenodoAuthor {
@@ -298,6 +298,7 @@ export async function publishStudy(opts: PublishStudyOptions): Promise<PublishSt
         action: AUDIT_ACTIONS.ZENODO_PUBLISH_FAILED,
         resourceId: orthancStudyId,
         ip,
+        detail: { phase: "upload", file: fileRow.filename, error: message },
       });
       throw new ZenodoPublishError(
         `Fallo al subir el archivo ${fileRow.filename}: ${message}`,
@@ -321,6 +322,7 @@ export async function publishStudy(opts: PublishStudyOptions): Promise<PublishSt
       action: AUDIT_ACTIONS.ZENODO_PUBLISH_FAILED,
       resourceId: orthancStudyId,
       ip,
+      detail: { phase: "publish", error: message },
     });
     throw new ZenodoPublishError(`Zenodo rechazó la publicación: ${message}`, "publish_rejected");
   }
@@ -450,6 +452,7 @@ export async function retryFailedFiles(
           action: AUDIT_ACTIONS.ZENODO_PUBLISH_FAILED,
           resourceId: dep.orthanc_study_id,
           ip,
+          detail: { phase: "retry", error: message },
         });
       }
     }
@@ -458,11 +461,3 @@ export async function retryFailedFiles(
   return { retried, failed };
 }
 
-// Local audit insert that doesn't require an open transaction client. Kept
-// separate from shared/audit so unit tests can mock that module partially.
-async function logAction(entry: Parameters<typeof logActionWithClient>[1]): Promise<void> {
-  await pool.query(
-    'INSERT INTO audit_log (user_id, action, resource_id, "timestamp", ip) VALUES ($1,$2,$3,NOW(),$4)',
-    [entry.userId, entry.action, entry.resourceId, entry.ip],
-  );
-}

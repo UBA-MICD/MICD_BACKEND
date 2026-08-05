@@ -76,10 +76,10 @@ describe("POST /api/v1/studies/upload", () => {
 
     // Override file size by monkey-patching — use a real large buffer check
     // Instead, send a file claiming large size via header trick is not possible;
-    // test the isDicom path with a real big file would be slow.
+    // testing this with a real 500MB+ file would be slow.
     // We test the handler logic by sending a valid DICOM that exceeds the limit
     // using a mock; here we just document that 413 fires at 500MB boundary.
-    // Full coverage is in unit tests (see upload.ts isDicom / size check).
+    // Full coverage is in unit tests (see upload.ts size check).
     expect(500 * 1024 * 1024).toBe(524288000); // 500MB constant check
   });
 

@@ -21,8 +21,9 @@ describe("runSync — failure path", () => {
   it("marks the log failed and rethrows when the imported-records query fails", async () => {
     poolQuery
       .mockResolvedValueOnce({ rows: [{ id: 7 }] }) // INSERT sync_log
+      .mockResolvedValueOnce({ rows: [] })            // logAction SYNC_STARTED
       .mockRejectedValueOnce(new Error("relation studies does not exist")) // getImportedRecords
-      .mockResolvedValue({ rows: [] }); // UPDATE sync_log failed
+      .mockResolvedValue({ rows: [] }); // UPDATE sync_log failed + logAction SYNC_FAILED
 
     await expect(runSync()).rejects.toThrow("relation studies does not exist");
 

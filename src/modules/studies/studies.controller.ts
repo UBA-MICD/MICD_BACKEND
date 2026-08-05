@@ -70,8 +70,11 @@ export const listStudies: RequestHandler = async (req, res) => {
       dateFrom: (req.query.date_from as string) || null,
       dateTo: (req.query.date_to as string) || null,
       search: (req.query.search as string) || null,
+      zenodoLinked: req.query.zenodo_linked === "true" ? true : null,
     };
-    res.json(await studiesService.listStudies(page, limit, filters));
+    const result = await studiesService.listStudies(page, limit, filters);
+    console.log(`[studies] listStudies — total=${result.total} page=${page} filters=${JSON.stringify(filters)} studies=${JSON.stringify(result.studies.map(s => ({ id: s.orthanc_study_id, patient: s.patient_name, modality: s.modality })))}`);
+    res.json(result);
   } catch (err) {
     sendError(res, err);
   }
@@ -85,6 +88,14 @@ export const getStudyThumbnail: RequestHandler = async (req, res) => {
     res.setHeader("Content-Type", contentType);
     res.setHeader("Cache-Control", "public, max-age=3600");
     res.send(buffer);
+  } catch (err) {
+    sendError(res, err);
+  }
+};
+
+export const getStudyZenodo: RequestHandler = async (req, res) => {
+  try {
+    res.json(await studiesService.getStudyZenodoDetail(req.params.studyId));
   } catch (err) {
     sendError(res, err);
   }

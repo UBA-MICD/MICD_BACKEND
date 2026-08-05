@@ -56,7 +56,48 @@ async function waitForBackend(
   return false;
 }
 
-async function seedData(dir: string, uploadUrl: string): Promise<boolean> {
+async function getAuthToken(baseUrl: string): Promise<string | null> {
+  const email =
+    process.env.SEED_EMAIL || process.env.ADMIN_EMAIL || "test@micd.local";
+  const passwordsToTry = Array.from(
+    new Set([
+      process.env.SEED_PASSWORD,
+      "testpassword",
+      process.env.ADMIN_PASSWORD,
+    ]),
+  ).filter((p): p is string => Boolean(p));
+
+  const loginUrl = `${baseUrl}/auth/login`;
+
+  for (const password of passwordsToTry) {
+    console.log(`Authenticating with backend as ${email}...`);
+    try {
+      const res = await fetch(loginUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+
+      if (res.status === 200) {
+        const data = (await res.json()) as { accessToken?: string };
+        if (data.accessToken) {
+          console.log("Authentication successful!");
+          return data.accessToken;
+        }
+      }
+    } catch (e) {
+      console.error("Error logging in to backend:", e);
+    }
+  }
+  console.error("Login failed: All credential attempts failed.");
+  return null;
+}
+
+async function seedData(
+  dir: string,
+  uploadUrl: string,
+  token: string,
+): Promise<boolean> {
   const files = getDicomFiles(dir);
   if (files.length === 0) {
     console.log("No DICOM files found to upload.");
@@ -73,8 +114,14 @@ async function seedData(dir: string, uploadUrl: string): Promise<boolean> {
       const formData = new FormData();
       formData.append("file", blob, path.basename(filePath));
 
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
       const res = await fetch(`${uploadUrl}?force=true`, {
         method: "POST",
+        headers,
         body: formData,
       });
 
@@ -103,7 +150,12 @@ async function main() {
   if (!ready) {
     process.exit(1);
   }
-  const success = await seedData(STAGING_DIR, UPLOAD_URL);
+  const token = await getAuthToken(API_BASE_URL);
+  if (!token) {
+    console.error("Failed to authenticate. Exiting seeding.");
+    process.exit(1);
+  }
+  const success = await seedData(STAGING_DIR, UPLOAD_URL, token);
   if (!success) {
     process.exit(1);
   }

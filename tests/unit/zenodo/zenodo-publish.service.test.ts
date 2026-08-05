@@ -18,6 +18,7 @@ jest.mock("../../../src/shared/audit", () => ({
     ZENODO_STUDY_PUBLISHED: "ZENODO_STUDY_PUBLISHED",
     ZENODO_PUBLISH_FAILED: "ZENODO_PUBLISH_FAILED",
   },
+  logAction: jest.fn().mockResolvedValue(undefined),
   logActionWithClient: jest.fn(),
 }));
 jest.mock("../../../src/modules/zenodo/zenodo-rate-limit.service", () => ({

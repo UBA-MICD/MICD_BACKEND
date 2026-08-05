@@ -106,11 +106,12 @@ describe('runSync', () => {
   function setupSync(records: object[], zenodoResponses: object[]) {
     poolQuery
       .mockResolvedValueOnce({ rows: [{ id: 99 }] })     // INSERT sync_log
+      .mockResolvedValueOnce({ rows: [] })                // logAction SYNC_STARTED
       .mockResolvedValueOnce({ rows: records })           // getImportedRecords
     for (const resp of zenodoResponses) {
       mockedAxios.get.mockResolvedValueOnce({ data: resp } as any)
     }
-    // remaining pool calls (UPDATE for new_version, UPDATE sync_log, UPDATE config)
+    // remaining pool calls (UPDATE for new_version, UPDATE sync_log, UPDATE config, logAction COMPLETED)
     poolQuery.mockResolvedValue({ rows: [] })
   }
 
@@ -154,7 +155,8 @@ describe('runSync', () => {
 
   it('counts errors when Zenodo is unreachable and does not mark studies', async () => {
     poolQuery
-      .mockResolvedValueOnce({ rows: [{ id: 99 }] })
+      .mockResolvedValueOnce({ rows: [{ id: 99 }] })     // INSERT sync_log
+      .mockResolvedValueOnce({ rows: [] })                // logAction SYNC_STARTED
       .mockResolvedValueOnce({
         rows: [{ record_id: 100, environment: 'production', version: '1.0', concept_record_id: null }],
       })
