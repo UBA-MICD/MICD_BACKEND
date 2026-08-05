@@ -8,7 +8,11 @@ FROM ${NODE_IMAGE} AS builder
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci
+# --include=dev is explicit on purpose: this stage needs typescript to compile.
+# A plain `npm ci` silently drops devDependencies when the build host has
+# NODE_ENV=production (or omit=dev in any npmrc) leaking in, which fails later
+# and confusingly at `npm run build` with `sh: tsc: not found`.
+RUN npm ci --include=dev
 
 COPY tsconfig.json ./
 COPY src/ ./src/
@@ -54,7 +58,8 @@ FROM ${NODE_IMAGE} AS test
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci
+# Same reason as the builder stage: this one needs jest/ts-jest from devDeps.
+RUN npm ci --include=dev
 
 COPY tsconfig.json tsconfig.jest.json jest.config.js ./
 COPY src/ ./src/
