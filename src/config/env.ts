@@ -18,6 +18,17 @@ export const tlsConfig = {
   keyPath: process.env.TLS_KEY_PATH,
 };
 
+// Comma-separated allowlist of browser origins permitted to call this API
+// cross-origin. Empty means "no allowlist configured" — see cors.middleware.ts
+// for what that falls back to. Native clients (the desktop app, the seeder)
+// send no Origin at all and are unaffected by this.
+export const corsConfig = {
+  allowedOrigins: (process.env.ALLOWED_ORIGINS ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0),
+};
+
 export const dbConfig = {
   host: process.env.DB_HOST ?? "postgres",
   port: parseInt(process.env.DB_PORT ?? "5432", 10),

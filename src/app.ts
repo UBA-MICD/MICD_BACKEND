@@ -1,6 +1,6 @@
 import express from "express";
-import cors from "cors";
 import swaggerUi from "swagger-ui-express";
+import { corsMiddleware } from "./middleware/cors.middleware";
 import { openapiSpec } from "./openapi";
 import { healthRouter } from "./modules/health/health.routes";
 import { authRouter } from "./modules/auth/auth.routes";
@@ -22,7 +22,7 @@ export const app = express();
 // for every request.
 app.set("trust proxy", 1);
 
-app.use(cors());
+app.use(corsMiddleware);
 app.use(express.json());
 
 app.use("/auth", authRouter); // public: /auth/login, /auth/refresh, /auth/logout
