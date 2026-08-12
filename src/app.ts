@@ -1,5 +1,6 @@
 import express from "express";
 import swaggerUi from "swagger-ui-express";
+import { serverConfig } from "./config/env";
 import { corsMiddleware } from "./middleware/cors.middleware";
 import { openapiSpec } from "./openapi";
 import { healthRouter } from "./modules/health/health.routes";
@@ -16,11 +17,12 @@ import activityRouter from "./modules/activity/activity.routes";
  */
 export const app = express();
 
-// Trust exactly one hop (the nginx reverse proxy in front of the web
-// deployment) so req.ip / X-Forwarded-For-derived values — used by the login
-// rate limiter to key on the real client IP — aren't just nginx's container IP
-// for every request.
-app.set("trust proxy", 1);
+// How many proxy hops may set X-Forwarded-For. Defaults to 1 for the nginx
+// deployment, where it keeps the login rate limiter keyed on the real client IP
+// instead of nginx's container IP. Deployments reached directly — the desktop
+// app talking to its own backend — must set TRUST_PROXY=0, otherwise a client
+// can forge the header and rotate past the limiter. See config/env.ts.
+app.set("trust proxy", serverConfig.trustProxy);
 
 app.use(corsMiddleware);
 app.use(express.json());

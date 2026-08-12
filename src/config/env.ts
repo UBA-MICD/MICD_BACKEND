@@ -6,8 +6,29 @@
  * and can be validated at startup.
  */
 
+/**
+ * How many reverse-proxy hops may be trusted to set X-Forwarded-For.
+ *
+ * This is a security control, not a convenience knob: req.ip is derived from
+ * that header for every trusted hop, and the login rate limiter keys on req.ip.
+ * Trust a hop that isn't really there and a client can supply its own
+ * X-Forwarded-For, present a different IP on every request, and never reach the
+ * limit. Behind the `web` repo's nginx the answer is 1; when the API is reached
+ * directly — the desktop app, or any published port with no proxy in front — it
+ * must be 0.
+ *
+ * Unparseable values fall back to 1 rather than to "trust everything".
+ */
+function parseTrustProxy(raw: string | undefined): number | false {
+  if (raw === undefined) return 1;
+  if (raw === "0" || raw.toLowerCase() === "false") return false;
+  const hops = parseInt(raw, 10);
+  return Number.isNaN(hops) || hops < 0 ? 1 : hops;
+}
+
 export const serverConfig = {
   port: parseInt(process.env.PORT ?? "3000", 10),
+  trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
 };
 
 // TLS is opt-in: unset/anything but the literal "true" keeps the server on

@@ -23,6 +23,7 @@ const ENV_KEYS = [
   "TLS_ENABLED",
   "TLS_CERT_PATH",
   "TLS_KEY_PATH",
+  "TRUST_PROXY",
 ] as const;
 
 type EnvOverrides = Partial<Record<(typeof ENV_KEYS)[number], string>>;
@@ -45,7 +46,7 @@ afterEach(() => {
 describe("config/env — defaults", () => {
   it("uses documented defaults when no env vars are set", () => {
     const env = loadEnv();
-    expect(env.serverConfig).toEqual({ port: 3000 });
+    expect(env.serverConfig).toEqual({ port: 3000, trustProxy: 1 });
     expect(env.dbConfig).toEqual({
       host: "postgres",
       port: 5432,
@@ -245,5 +246,33 @@ describe("config/env — TLS", () => {
       certPath: "/certs/tls.crt",
       keyPath: "/certs/tls.key",
     });
+  });
+});
+
+/**
+ * TRUST_PROXY decides how many forwarding hops may set X-Forwarded-For, and the
+ * login rate limiter keys on the req.ip that results — every trusted hop is one
+ * a client can forge past. It has to be 0 wherever the API is reached directly,
+ * which is the desktop app's case.
+ */
+describe("config/env — trust proxy", () => {
+  it("trusts a single hop by default, matching the nginx deployment", () => {
+    expect(loadEnv().serverConfig.trustProxy).toBe(1);
+  });
+
+  it.each(["0", "false", "FALSE"])(
+    "disables proxy trust entirely for TRUST_PROXY=%j",
+    (value) => {
+      expect(loadEnv({ TRUST_PROXY: value }).serverConfig.trustProxy).toBe(false);
+    },
+  );
+
+  it("accepts an explicit hop count", () => {
+    expect(loadEnv({ TRUST_PROXY: "2" }).serverConfig.trustProxy).toBe(2);
+  });
+
+  it("falls back to one hop for an unparseable value", () => {
+    expect(loadEnv({ TRUST_PROXY: "yes" }).serverConfig.trustProxy).toBe(1);
+    expect(loadEnv({ TRUST_PROXY: "-3" }).serverConfig.trustProxy).toBe(1);
   });
 });
