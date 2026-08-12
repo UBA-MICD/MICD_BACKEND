@@ -109,6 +109,24 @@ if (
 
 export const bcryptRounds = parseInt(process.env.BCRYPT_ROUNDS ?? "12", 10);
 
+/**
+ * Rate-limit budgets, all per IP per window.
+ *
+ * These are sized for the desktop deployment, where the entire application is
+ * one user behind a single (loopback) address doing bursty bulk work — a seed
+ * run uploads hundreds of DICOMs back to back, and every one of them keys to
+ * the same bucket. The upload and global budgets are therefore deliberately
+ * generous: they exist to bound abuse, not to pace a legitimate client. Login
+ * stays tight because credential stuffing is the actual threat on that route.
+ */
+export const rateLimitConfig = {
+  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS ?? String(15 * 60 * 1000), 10),
+  loginMax: parseInt(process.env.RATE_LIMIT_LOGIN_MAX ?? "5", 10),
+  refreshMax: parseInt(process.env.RATE_LIMIT_REFRESH_MAX ?? "60", 10),
+  uploadMax: parseInt(process.env.RATE_LIMIT_UPLOAD_MAX ?? "1000", 10),
+  globalMax: parseInt(process.env.RATE_LIMIT_GLOBAL_MAX ?? "3000", 10),
+};
+
 // Ceiling for a single DICOM upload, enforced in two places: multer aborts the
 // stream once a request exceeds it (so an oversized body is never buffered into
 // memory) and the upload service re-checks the buffer it ends up with.

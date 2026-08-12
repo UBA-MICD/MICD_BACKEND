@@ -2,6 +2,7 @@ import express from "express";
 import swaggerUi from "swagger-ui-express";
 import { serverConfig } from "./config/env";
 import { corsMiddleware } from "./middleware/cors.middleware";
+import { globalRateLimiter } from "./middleware/rate-limit.middleware";
 import { openapiSpec } from "./openapi";
 import { healthRouter } from "./modules/health/health.routes";
 import { authRouter } from "./modules/auth/auth.routes";
@@ -26,6 +27,10 @@ app.set("trust proxy", serverConfig.trustProxy);
 
 app.use(corsMiddleware);
 app.use(express.json());
+
+// Backstop budget for every route (liveness/readiness excepted — see the
+// middleware). Route-specific limiters below are tighter where it matters.
+app.use(globalRateLimiter);
 
 app.use("/auth", authRouter); // public: /auth/login, /auth/refresh, /auth/logout
 
