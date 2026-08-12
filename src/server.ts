@@ -23,7 +23,7 @@ runMigrations()
     const server = createHttpServer(app, tlsConfig);
     server.listen(serverConfig.port, serverConfig.host, () =>
       console.log(
-        `MICD backend listening on ${serverConfig.host}:${serverConfig.port} (${tlsConfig.enabled ? "https" : "http"})`,
+        `MICD backend listening on ${serverConfig.host ?? "all interfaces"}:${serverConfig.port} (${tlsConfig.enabled ? "https" : "http"})`,
       ),
     );
 

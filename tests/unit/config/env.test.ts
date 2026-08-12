@@ -49,7 +49,7 @@ describe("config/env — defaults", () => {
     const env = loadEnv();
     expect(env.serverConfig).toEqual({
       port: 3000,
-      host: "0.0.0.0",
+      host: undefined,
       trustProxy: 1,
     });
     expect(env.dbConfig).toEqual({
@@ -289,8 +289,15 @@ describe("config/env — trust proxy", () => {
  * to whatever network the machine is on.
  */
 describe("config/env — bind address", () => {
-  it("binds all interfaces by default", () => {
-    expect(loadEnv().serverConfig.host).toBe("0.0.0.0");
+  it("leaves the bind address to Node by default", () => {
+    // Not "0.0.0.0": with no host Node binds dual-stack, while an explicit
+    // 0.0.0.0 is IPv4-only and refuses ::1 — which is what `localhost`
+    // resolves to first, breaking container healthchecks.
+    expect(loadEnv().serverConfig.host).toBeUndefined();
+  });
+
+  it("treats an empty HOST as unset rather than as a bind address", () => {
+    expect(loadEnv({ HOST: "" }).serverConfig.host).toBeUndefined();
   });
 
   it("binds loopback when HOST is set to it", () => {

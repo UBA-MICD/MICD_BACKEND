@@ -72,9 +72,10 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD must be set in .env}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
       ZENODO_TIMEOUT_MS: ${ZENODO_TIMEOUT_MS:-10000}
-      # Binds every interface inside the container so the published port works;
-      # this is not the desktop case (see .env.example).
-      HOST: ${HOST:-0.0.0.0}
+      # Unset by default: Node then binds dual-stack, which the container
+      # healthcheck's localhost (::1) needs. Not the desktop case — see
+      # .env.example.
+      HOST: ${HOST:-}
       TRUST_PROXY: ${TRUST_PROXY:-1}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
       MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-524288000}

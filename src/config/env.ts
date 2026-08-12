@@ -28,11 +28,16 @@ function parseTrustProxy(raw: string | undefined): number | false {
 
 export const serverConfig = {
   port: parseInt(process.env.PORT ?? "3000", 10),
-  // Interface to bind. The default publishes on every interface, which is what
-  // the containerised deployment needs. A desktop install bundling its own
-  // backend should set HOST=127.0.0.1: otherwise the API — and through it the
-  // PACS behind it — is reachable by anyone on the same network as the laptop.
-  host: process.env.HOST ?? "0.0.0.0",
+  // Interface to bind, or undefined to let Node choose.
+  //
+  // Undefined is deliberately the default and is NOT the same as "0.0.0.0":
+  // with no host Node binds dual-stack (IPv6 :: plus mapped IPv4), whereas an
+  // explicit 0.0.0.0 binds IPv4 only and refuses connections to ::1 — which is
+  // what `localhost` resolves to first in the container, so healthchecks fail.
+  // A desktop install bundling its own backend should set HOST=127.0.0.1:
+  // otherwise the API — and through it the PACS behind it — is reachable by
+  // anyone on the same network as the laptop.
+  host: process.env.HOST || undefined,
   trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
 };
 
