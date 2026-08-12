@@ -72,6 +72,16 @@ if (
 
 export const bcryptRounds = parseInt(process.env.BCRYPT_ROUNDS ?? "12", 10);
 
+// Ceiling for a single DICOM upload, enforced in two places: multer aborts the
+// stream once a request exceeds it (so an oversized body is never buffered into
+// memory) and the upload service re-checks the buffer it ends up with.
+export const uploadConfig = {
+  maxFileBytes: parseInt(
+    process.env.MAX_UPLOAD_BYTES ?? String(500 * 1024 * 1024),
+    10,
+  ),
+};
+
 // ── Zenodo (ZEN-01) ──────────────────────────────────────────────────────────
 // Lazy getters (instead of values captured at import time) so unit tests can
 // set the variables at runtime, and so a missing ENCRYPTION_KEY only fails when
