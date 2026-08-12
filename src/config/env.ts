@@ -28,6 +28,11 @@ function parseTrustProxy(raw: string | undefined): number | false {
 
 export const serverConfig = {
   port: parseInt(process.env.PORT ?? "3000", 10),
+  // Interface to bind. The default publishes on every interface, which is what
+  // the containerised deployment needs. A desktop install bundling its own
+  // backend should set HOST=127.0.0.1: otherwise the API — and through it the
+  // PACS behind it — is reachable by anyone on the same network as the laptop.
+  host: process.env.HOST ?? "0.0.0.0",
   trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
 };
 

@@ -24,6 +24,7 @@ const ENV_KEYS = [
   "TLS_CERT_PATH",
   "TLS_KEY_PATH",
   "TRUST_PROXY",
+  "HOST",
 ] as const;
 
 type EnvOverrides = Partial<Record<(typeof ENV_KEYS)[number], string>>;
@@ -46,7 +47,11 @@ afterEach(() => {
 describe("config/env — defaults", () => {
   it("uses documented defaults when no env vars are set", () => {
     const env = loadEnv();
-    expect(env.serverConfig).toEqual({ port: 3000, trustProxy: 1 });
+    expect(env.serverConfig).toEqual({
+      port: 3000,
+      host: "0.0.0.0",
+      trustProxy: 1,
+    });
     expect(env.dbConfig).toEqual({
       host: "postgres",
       port: 5432,
@@ -274,5 +279,21 @@ describe("config/env — trust proxy", () => {
   it("falls back to one hop for an unparseable value", () => {
     expect(loadEnv({ TRUST_PROXY: "yes" }).serverConfig.trustProxy).toBe(1);
     expect(loadEnv({ TRUST_PROXY: "-3" }).serverConfig.trustProxy).toBe(1);
+  });
+});
+
+/**
+ * HOST is the interface the API binds to. The default publishes on all
+ * interfaces, which is what the Docker deployment needs; a desktop install
+ * bundling its own backend should bind loopback so the local API is not exposed
+ * to whatever network the machine is on.
+ */
+describe("config/env — bind address", () => {
+  it("binds all interfaces by default", () => {
+    expect(loadEnv().serverConfig.host).toBe("0.0.0.0");
+  });
+
+  it("binds loopback when HOST is set to it", () => {
+    expect(loadEnv({ HOST: "127.0.0.1" }).serverConfig.host).toBe("127.0.0.1");
   });
 });
