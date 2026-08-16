@@ -1,0 +1,83 @@
+name: CI Pipeline - Backend
+
+on:
+  push:
+    branches: [ dev ]
+  pull_request:
+    branches: [ main, dev ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: micd
+          POSTGRES_USER: micd
+          POSTGRES_PASSWORD: micd
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U micd -d micd"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      orthanc:
+        image: orthancteam/orthanc:24.1.2
+        ports:
+          - 8042:8042
+        env:
+          ORTHANC__AUTHENTICATION_ENABLED: "true"
+          ORTHANC__REGISTERED_USERS: '{"orthanc": "orthanc"}'
+        options: >-
+          --health-cmd "python3 -c \"import urllib.request; req = urllib.request.Request('http://127.0.0.1:8042/system', headers={'Authorization': 'Basic b3J0aGFuYzpvcnRoYW5j'}); urllib.request.urlopen(req, timeout=5)\" || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Node.js dependencies
+        run: npm ci
+
+      - name: Set up Environment Variables
+        run: cp .env.example .env
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install uv and cache Python dependencies
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          uv run --with pydicom --with requests --with numpy python3 -c "print('Python dependencies cached.')"
+
+      - name: Run Python Unit Tests
+        run: uv run --with pydicom python3 scripts/test_generate_synthetic_data.py
+
+      - name: Run Node.js Tests with Coverage
+        run: npm test -- --coverage --coverageReporters="lcov"
+        env:
+          ORTHANC_URL: http://localhost:8042
+          DB_HOST: localhost
+          DB_PORT: 5432
+
+      - name: Upload coverage report to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage/lcov.info
+          fail_ci_if_error: true
+          token: ${{ secrets.CODECOV_TOKEN }}
