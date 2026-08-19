@@ -5,6 +5,14 @@ Ordered, per-step execution guide for the plan in
 this file is the *sequence* (do this, then this, verify, commit). A future session
 should be able to execute the whole feature from this document plus the plan.
 
+## Progress (2026-08-18)
+
+- ✅ **Step 0 — docs** committed (`cb3a5b8` on `feat/us-21-rbac`): this routemap +
+  `us-21-rbac-plan.md` + the `users-role-feature-plan` memory. No code.
+- ⏭️ **NEXT: PR1 Step 1.1** — defuse the migration landmine (`002_auth.ts` delete
+  `:47` + `:49`, fix header comment). Own commit, highest risk. Read the file first.
+- Everything after 1.1 is untouched.
+
 ## Ground rules (apply to every step)
 
 - **Branch:** one branch `feat/us-21-rbac` across the work. **One commit per step**
