@@ -24,7 +24,9 @@ services:
     environment:
       POSTGRES_DB: micd
       POSTGRES_USER: micd
-      POSTGRES_PASSWORD: micd
+      # Non-default: the backend runs with NODE_ENV=production, which fails fast
+      # on the literal "micd"/"orthanc" credentials (config/env.ts).
+      POSTGRES_PASSWORD: test-db-secret
     tmpfs:
       - /var/lib/postgresql/data
     healthcheck:
@@ -41,13 +43,13 @@ services:
       ORTHANC__NAME: "MICD Test Orthanc"
       ORTHANC__AUTHENTICATION_ENABLED: "true"
       ORTHANC__REGISTERED_USERS: |
-        {"orthanc": "orthanc"}
+        {"orthanc": "test-orthanc-secret"}
       ORTHANC__DICOM_WEB__ENABLE: "true"
       ORTHANC__DICOM_WEB__ROOT: "/dicom-web/"
     tmpfs:
       - /var/lib/orthanc/db
     healthcheck:
-      test: ["CMD-SHELL", "python3 -c \"import urllib.request, base64; req=urllib.request.Request('http://localhost:8042/system'); req.add_header('Authorization','Basic '+base64.b64encode(b'orthanc:orthanc').decode()); urllib.request.urlopen(req,timeout=3)\" || exit 1"]
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request, base64; req=urllib.request.Request('http://localhost:8042/system'); req.add_header('Authorization','Basic '+base64.b64encode(b'orthanc:test-orthanc-secret').decode()); urllib.request.urlopen(req,timeout=3)\" || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -65,10 +67,10 @@ services:
       DB_PORT: 5432
       DB_NAME: micd
       DB_USER: micd
-      DB_PASSWORD: micd
+      DB_PASSWORD: test-db-secret
       ORTHANC_URL: http://orthanc:8042
       ORTHANC_USERNAME: orthanc
-      ORTHANC_PASSWORD: orthanc
+      ORTHANC_PASSWORD: test-orthanc-secret
       JWT_SECRET: test-access-secret-not-for-production
       JWT_REFRESH_SECRET: test-refresh-secret-not-for-production
       JWT_ACCESS_TTL: 15m
@@ -96,9 +98,13 @@ services:
       BACKEND_URL: http://backend:3000
       ORTHANC_URL: http://orthanc:8042
       ORTHANC_USERNAME: orthanc
-      ORTHANC_PASSWORD: orthanc
+      ORTHANC_PASSWORD: test-orthanc-secret
       TEST_USER_EMAIL: test@micd.local
       TEST_USER_PASSWORD: testpassword
+      # Same secret the backend signs with, so the RBAC suite can mint validly
+      # signed role-specific tokens (see tests/helpers/auth.ts getAuthHeaderFor).
+      JWT_SECRET: test-access-secret-not-for-production
+      JWT_REFRESH_SECRET: test-refresh-secret-not-for-production
     volumes:
       # Sample DICOM used by the upload/orthanc suites (excluded from the image).
       - ./.data.example:/app/.data.example:ro
