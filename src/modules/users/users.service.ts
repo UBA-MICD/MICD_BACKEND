@@ -1,6 +1,8 @@
 import { HttpError } from "../../shared/http-error";
 import { isRole, Role } from "../../shared/roles";
 import { AUDIT_ACTIONS, logAction } from "../../shared/audit";
+import { issueInvite } from "../auth/invite.service";
+import { sendInvite } from "../../shared/mailer";
 import * as repo from "./users.repository";
 import type { MutationResult, UserRow } from "./users.repository";
 
@@ -50,6 +52,42 @@ export async function createUser(
     ip: actor.ip,
     detail: { email, role },
   });
+  await sendUserInvite(user, actor);
+  return user;
+}
+
+/**
+ * Issue an invite and email it, then audit INVITE_SENT. A mail-delivery failure
+ * is logged but does not fail the surrounding operation — the admin can re-send
+ * from the panel (POST /:id/invite).
+ */
+async function sendUserInvite(user: UserRow, actor: Actor): Promise<void> {
+  try {
+    const code = await issueInvite(user.id);
+    await sendInvite(user.email, code);
+    await logAction({
+      userId: actor.userId,
+      action: AUDIT_ACTIONS.INVITE_SENT,
+      resourceId: String(user.id),
+      ip: actor.ip,
+    });
+  } catch (err) {
+    console.error(`Failed to send invite to user ${user.id}:`, err);
+  }
+}
+
+/** Re-issue and resend an invite for a still-invited user. */
+export async function reinvite(id: number, actor: Actor): Promise<UserRow> {
+  const user = await repo.findUserRow(id);
+  if (!user || user.status === "deleted") {
+    throw new HttpError(404, { error: "User not found" });
+  }
+  if (user.status !== "invited") {
+    throw new HttpError(409, {
+      error: "Only invited users can be re-invited",
+    });
+  }
+  await sendUserInvite(user, actor);
   return user;
 }
 

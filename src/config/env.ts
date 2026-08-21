@@ -72,6 +72,39 @@ if (
 
 export const bcryptRounds = parseInt(process.env.BCRYPT_ROUNDS ?? "12", 10);
 
+// Outgoing mail for invites (US-H04). `enabled` is derived from SMTP_HOST: when
+// it is unset the mailer logs the invite link to stdout instead of sending,
+// which keeps dev, CI and the integration suite working with no mail server.
+// Gate mail behavior on `enabled`, never on NODE_ENV (the test stack runs as
+// production). Lazy getters so tests can set the vars at runtime.
+export const smtpConfig = {
+  get enabled(): boolean {
+    return !!process.env.SMTP_HOST;
+  },
+  get host(): string | undefined {
+    return process.env.SMTP_HOST;
+  },
+  get port(): number {
+    return parseInt(process.env.SMTP_PORT ?? "587", 10);
+  },
+  get user(): string | undefined {
+    return process.env.SMTP_USER;
+  },
+  get pass(): string | undefined {
+    return process.env.SMTP_PASS;
+  },
+  get from(): string {
+    return process.env.SMTP_FROM ?? "MICD <no-reply@micd.local>";
+  },
+};
+
+/** Public base URL of the web app, used to build the invite link. */
+export const appBaseUrl = {
+  get value(): string {
+    return process.env.APP_BASE_URL ?? "http://localhost:3000";
+  },
+};
+
 // First-admin seed (US-21). Migration 006 seeds an admin only when BOTH email
 // and password are provided, so CI — which does `cp .env.example .env` and
 // leaves these unset — boots without a seeded admin. Lazy getters so the

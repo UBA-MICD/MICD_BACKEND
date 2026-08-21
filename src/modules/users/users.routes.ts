@@ -16,5 +16,6 @@ usersRouter.post("/", ...ADMIN, ctrl.createUser);
 usersRouter.patch("/:id/role", ...ADMIN, ctrl.updateRole);
 usersRouter.patch("/:id/status", ...ADMIN, ctrl.updateStatus);
 usersRouter.delete("/:id", ...ADMIN, ctrl.deleteUser);
+usersRouter.post("/:id/invite", ...ADMIN, ctrl.reinvite);
 
 export default usersRouter;

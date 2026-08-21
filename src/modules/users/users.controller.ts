@@ -76,3 +76,17 @@ export const deleteUser: RequestHandler = async (req, res) => {
     sendError(res, err);
   }
 };
+
+export const reinvite: RequestHandler = async (req, res) => {
+  const id = parseId(req.params.id);
+  if (id === null) {
+    res.status(400).json({ error: "invalid user id" });
+    return;
+  }
+  try {
+    const user = await usersService.reinvite(id, actorOf(req));
+    res.status(200).json(user);
+  } catch (err) {
+    sendError(res, err);
+  }
+};
