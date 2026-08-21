@@ -13,3 +13,17 @@ export const loginRateLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: "Too many login attempts. Try again later." },
 });
+
+/**
+ * Rate limiter for the public invite endpoints (validate + accept). Separate
+ * from the login limiter so a burst of invite lookups can't lock out logins,
+ * and vice versa. A little more generous than login (a legit user may reload
+ * the accept page), and it counts every request — a valid redeem is one-shot.
+ */
+export const inviteRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many attempts. Try again later." },
+});

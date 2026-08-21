@@ -101,6 +101,13 @@ services:
       ORTHANC_PASSWORD: test-orthanc-secret
       TEST_USER_EMAIL: test@micd.local
       TEST_USER_PASSWORD: testpassword
+      # DB access so a few integration tests can set up fixtures directly (e.g.
+      # mint an invite code) against the same database the backend uses.
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: micd
+      DB_USER: micd
+      DB_PASSWORD: test-db-secret
       # Same secret the backend signs with, so the RBAC suite can mint validly
       # signed role-specific tokens (see tests/helpers/auth.ts getAuthHeaderFor).
       JWT_SECRET: test-access-secret-not-for-production

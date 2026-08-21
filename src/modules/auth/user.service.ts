@@ -36,3 +36,14 @@ export async function findUserById(id: number): Promise<User | null> {
 export async function stampLastLogin(id: number): Promise<void> {
   await pool.query("UPDATE users SET last_login_at = NOW() WHERE id = $1", [id]);
 }
+
+/** Set a redeemed invitee's password and flip the account to active. */
+export async function setPasswordAndActivate(
+  id: number,
+  passwordHash: string,
+): Promise<void> {
+  await pool.query(
+    "UPDATE users SET password = $2, status = 'active' WHERE id = $1",
+    [id, passwordHash],
+  );
+}
