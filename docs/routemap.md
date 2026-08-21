@@ -5,13 +5,24 @@ Ordered, per-step execution guide for the plan in
 this file is the *sequence* (do this, then this, verify, commit). A future session
 should be able to execute the whole feature from this document plus the plan.
 
-## Progress (2026-08-18)
+## Progress (2026-08-20)
 
-- ✅ **Step 0 — docs** committed (`cb3a5b8` on `feat/us-21-rbac`): this routemap +
-  `us-21-rbac-plan.md` + the `users-role-feature-plan` memory. No code.
-- ⏭️ **NEXT: PR1 Step 1.1** — defuse the migration landmine (`002_auth.ts` delete
-  `:47` + `:49`, fix header comment). Own commit, highest risk. Read the file first.
-- Everything after 1.1 is untouched.
+- ✅ **Step 0 — docs** committed (`cb3a5b8`): routemap + plan + memory.
+- ✅ **PR1 — Roles & enforcement** complete (`942f8da`…`2dd115f`), one commit per
+  step 1.1–1.7. 327 unit + 58 integration tests green (`make test-integration-docker`).
+  Notes from execution:
+  - **1.1 landmine had a THIRD line:** `002_auth.ts` also dropped `last_login_at`
+    (original `:60`), same wipe-on-boot failure — fixed alongside role/status.
+  - `HttpError`'s real signature is `(status, body)`, not the plan's 3-arg sketch;
+    403 body is `{ error: "Forbidden", detail: "Requires role: …" }`.
+  - The dockerized integration stack could not boot at all (pre-existing: `env.ts`
+    fail-fast vs the compose's literal `micd`/`orthanc` creds under
+    `NODE_ENV=production`). Fixed in `35763ef` with non-default test secrets.
+  - Migration 006 seeds admin from `ADMIN_EMAIL`/`ADMIN_PASSWORD` (bound param,
+    not interpolated); the runner now accepts `{ text, values }` statements.
+  - PR1 integration mints role tokens via a shared JWT secret (`getAuthHeaderFor`);
+    once PR2's user API lands, these can switch to real seeded accounts.
+- ⏭️ **NEXT: PR2 Step 2.1** — `src/modules/users/` admin CRUD (see below).
 
 ## Ground rules (apply to every step)
 
