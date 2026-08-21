@@ -1,7 +1,7 @@
 import { HttpError } from "../../shared/http-error";
 import { Role } from "../../shared/roles";
 import { verifyPassword } from "./password.service";
-import { findUserByEmail, findUserById } from "./user.service";
+import { findUserByEmail, findUserById, stampLastLogin } from "./user.service";
 import {
   signAccessToken,
   signRefreshToken,
@@ -49,6 +49,13 @@ export async function login(
   if (!user || !passwordOk) {
     throw new HttpError(401, INVALID_CREDENTIALS);
   }
+  // A blocked or soft-deleted account is refused with the SAME generic error,
+  // so login never discloses that an account exists but is disabled.
+  if (user.status === "blocked" || user.status === "deleted") {
+    throw new HttpError(401, INVALID_CREDENTIALS);
+  }
+
+  await stampLastLogin(user.id);
 
   const accessToken = signAccessToken({
     sub: user.id,

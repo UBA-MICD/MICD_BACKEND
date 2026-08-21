@@ -31,3 +31,8 @@ export async function findUserById(id: number): Promise<User | null> {
   );
   return rows[0] ?? null;
 }
+
+/** Record a successful login time — surfaced to the admin as "last access". */
+export async function stampLastLogin(id: number): Promise<void> {
+  await pool.query("UPDATE users SET last_login_at = NOW() WHERE id = $1", [id]);
+}
