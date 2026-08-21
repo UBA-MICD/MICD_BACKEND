@@ -15,6 +15,8 @@ import {
   type ImportedRecord,
 } from "../zenodo/zenodo-sync.service";
 import { logAction, AUDIT_ACTIONS } from "../../shared/audit";
+import { Role } from "../../shared/roles";
+import { redactStudy, mustBlockPatientSearch } from "./study-redaction";
 import * as repo from "./studies.repository";
 import { StudyFilters } from "./studies.repository";
 
@@ -128,11 +130,19 @@ export async function listStudies(
   page: number,
   limit: number,
   filters: StudyFilters,
+  role: Role,
 ): Promise<StudiesPage> {
   try {
+    // Neutralize the patient_name/id search for investigador — otherwise the
+    // ILIKE filter is a PHI oracle they could binary-search real names with,
+    // defeating the metadata redaction below.
+    const safeFilters = mustBlockPatientSearch(role)
+      ? { ...filters, search: null }
+      : filters;
     const offset = (page - 1) * limit;
-    const total = await repo.countStudies(filters);
-    const studies = await repo.findStudies(filters, limit, offset);
+    const total = await repo.countStudies(safeFilters);
+    const rows = await repo.findStudies(safeFilters, limit, offset);
+    const studies = rows.map((row) => redactStudy(row, role));
     return { studies, total, page, limit, totalPages: Math.ceil(total / limit) };
   } catch (err: any) {
     if (isHttpError(err)) throw err;

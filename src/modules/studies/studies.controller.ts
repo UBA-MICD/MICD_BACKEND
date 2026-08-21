@@ -72,8 +72,12 @@ export const listStudies: RequestHandler = async (req, res) => {
       search: (req.query.search as string) || null,
       zenodoLinked: req.query.zenodo_linked === "true" ? true : null,
     };
-    const result = await studiesService.listStudies(page, limit, filters);
-    console.log(`[studies] listStudies — total=${result.total} page=${page} filters=${JSON.stringify(filters)} studies=${JSON.stringify(result.studies.map(s => ({ id: s.orthanc_study_id, patient: s.patient_name, modality: s.modality })))}`);
+    const result = await studiesService.listStudies(
+      page,
+      limit,
+      filters,
+      req.user!.role,
+    );
     res.json(result);
   } catch (err) {
     sendError(res, err);
