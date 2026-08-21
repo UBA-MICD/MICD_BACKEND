@@ -1,10 +1,12 @@
 import jwt, { SignOptions } from "jsonwebtoken";
 import { randomUUID } from "crypto";
 import { jwtConfig } from "../../config/env";
+import { Role } from "../../shared/roles";
 
 export interface AccessTokenPayload {
   sub: number;
   email: string;
+  role: Role;
 }
 
 export interface RefreshTokenPayload {

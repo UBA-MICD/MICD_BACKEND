@@ -1,4 +1,5 @@
 import { HttpError } from "../../shared/http-error";
+import { Role } from "../../shared/roles";
 import { verifyPassword } from "./password.service";
 import { findUserByEmail, findUserById } from "./user.service";
 import {
@@ -30,7 +31,7 @@ export interface AuthTokens {
 }
 
 export interface LoginResult extends AuthTokens {
-  user: { id: number; email: string };
+  user: { id: number; email: string; role: Role };
 }
 
 /** Verify credentials and mint a fresh access/refresh token pair. */
@@ -49,14 +50,18 @@ export async function login(
     throw new HttpError(401, INVALID_CREDENTIALS);
   }
 
-  const accessToken = signAccessToken({ sub: user.id, email: user.email });
+  const accessToken = signAccessToken({
+    sub: user.id,
+    email: user.email,
+    role: user.role,
+  });
   const refreshToken = signRefreshToken({ sub: user.id });
   await storeRefreshToken(user.id, refreshToken, getTokenExpiry(refreshToken));
 
   return {
     accessToken,
     refreshToken,
-    user: { id: user.id, email: user.email },
+    user: { id: user.id, email: user.email, role: user.role },
   };
 }
 
@@ -82,7 +87,11 @@ export async function refresh(refreshToken: string): Promise<AuthTokens> {
     throw new HttpError(401, INVALID_REFRESH);
   }
 
-  const accessToken = signAccessToken({ sub: user.id, email: user.email });
+  const accessToken = signAccessToken({
+    sub: user.id,
+    email: user.email,
+    role: user.role,
+  });
   const newRefreshToken = signRefreshToken({ sub: user.id });
   await storeRefreshToken(
     user.id,

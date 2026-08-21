@@ -2,7 +2,7 @@ import { Request, Response } from "express";
 import { requireAuth } from "../../src/middleware/auth.middleware";
 import { signAccessToken } from "../../src/modules/auth/jwt.service";
 
-const PAYLOAD = { sub: 1, email: "user@micd.local" };
+const PAYLOAD = { sub: 1, email: "user@micd.local", role: "medico" as const };
 
 function makeRes() {
   const res: Partial<Response> = {};

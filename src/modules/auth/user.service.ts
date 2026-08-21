@@ -1,19 +1,24 @@
 import { pool } from "../../db/pool";
+import { Role } from "../../shared/roles";
 
 /**
- * Minimal credential record. The password column holds a bcrypt hash; the
- * shared test/development user is seeded by migration 002 (in SQL), so there is
- * no application-side seeding here.
+ * Credential + authorization record. `password` is a bcrypt hash, or NULL for
+ * an invited user who has not yet redeemed their invite (such a user cannot log
+ * in — callers must never pass a NULL password to bcrypt). `role` and `status`
+ * drive authorization; the shared test/development user is seeded by migration
+ * 002 (in SQL), so there is no application-side seeding here.
  */
 export interface User {
   id: number;
   email: string;
-  password: string;
+  password: string | null;
+  role: Role;
+  status: string;
 }
 
 export async function findUserByEmail(email: string): Promise<User | null> {
   const { rows } = await pool.query<User>(
-    "SELECT id, email, password FROM users WHERE email = $1",
+    "SELECT id, email, password, role, status FROM users WHERE email = $1",
     [email],
   );
   return rows[0] ?? null;
@@ -21,7 +26,7 @@ export async function findUserByEmail(email: string): Promise<User | null> {
 
 export async function findUserById(id: number): Promise<User | null> {
   const { rows } = await pool.query<User>(
-    "SELECT id, email, password FROM users WHERE id = $1",
+    "SELECT id, email, password, role, status FROM users WHERE id = $1",
     [id],
   );
   return rows[0] ?? null;

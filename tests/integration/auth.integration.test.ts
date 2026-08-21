@@ -96,7 +96,7 @@ describe("protected data endpoints", () => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { signAccessToken } = require("../../src/modules/auth/jwt.service");
     const expired = signAccessToken(
-      { sub: 1, email: TEST_EMAIL },
+      { sub: 1, email: TEST_EMAIL, role: "medico" as const },
       { expiresIn: "-1s" },
     );
     await expect(
