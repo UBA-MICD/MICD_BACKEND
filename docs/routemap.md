@@ -35,7 +35,24 @@ should be able to execute the whole feature from this document plus the plan.
     `user_invites` table + mailer). PR2 `POST /users` creates an `invited`,
     password-less user; PR3 wires the code + email.
   - Migration runner extended in PR1 already covers the parameterized admin seed.
-- ⏭️ **NEXT: PR3 Step 3.1** — migration `007_user_invites` + invite flow.
+- ✅ **PR3 — Invite flow** complete. Backend: `818a5a8` (migration 007 + invite
+  service), `2ee5b45` (public validate + accept-invite endpoints), `3709208`
+  (mailer + email-on-create + resend + .env.example fix). Frontend: web `0cfa63d`
+  (accept-invite screen), desktop `3ca30eb`. nodemailer is the one new backend dep.
+- ✅ **PR4 — Investigador PHI redaction** complete. `89d3904` (metadata redaction
+  + closed search oracle), `05495ca` (file-download anonymization). Verified against
+  the running Orthanc 24.1.2 that `POST /instances/:id/anonymize` returns the DICOM
+  in the body without persisting, and keeps UIDs with `Force`. `714f380` fixed a
+  test-infra flake (role tokens now forged from a DB lookup, no login → no
+  rate-limiter poisoning as suites grew). No client tags endpoint exists, so plan
+  step 4.2 (route-level tag filtering) was N/A — the file path covers header PHI.
+- ✅ **PR5 — Final docs** complete: finalized `rbac.md`, new `user-management.md`,
+  retracted `zenodo.md` "no roles", env vars in README + `.env.prod.example`.
+- 🎉 **All five PRs done.** 374 unit + 73 integration (backend) + 167 (web) green.
+- ⚠️ **Follow-ups for the human:** open PRs per the five-commit-group boundaries;
+  web/desktop RBAC work sits on `feat/us-21-rbac` branched from their prior
+  checkouts (see PR2 note) — rebase onto `dev` if the team prefers a clean base.
+  `desktop/backend/` still vendors its own un-synced backend copy (unchanged).
 
 ## Ground rules (apply to every step)
 

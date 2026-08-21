@@ -1,9 +1,9 @@
 # RBAC — roles and per-endpoint authorization
 
-> Status: **skeleton (PR1)**. Finalized in PR5 once investigador PHI redaction
-> (PR4) and the user-management panel (PR2/PR3) have landed. The design lives in
-> [`us-21-rbac-plan.md`](./us-21-rbac-plan.md); the execution order in
-> [`routemap.md`](./routemap.md).
+> US-21. Roles, per-endpoint 403 enforcement, and investigador PHI redaction.
+> User lifecycle (create/invite/block/delete) is in
+> [`user-management.md`](./user-management.md). Original design:
+> [`us-21-rbac-plan.md`](./us-21-rbac-plan.md).
 
 ## Roles
 
