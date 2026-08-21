@@ -72,6 +72,22 @@ if (
 
 export const bcryptRounds = parseInt(process.env.BCRYPT_ROUNDS ?? "12", 10);
 
+// First-admin seed (US-21). Migration 006 seeds an admin only when BOTH email
+// and password are provided, so CI — which does `cp .env.example .env` and
+// leaves these unset — boots without a seeded admin. Lazy getters so the
+// migration reads whatever the environment holds at run time.
+export const adminSeed = {
+  get email(): string | undefined {
+    return process.env.ADMIN_EMAIL;
+  },
+  get password(): string | undefined {
+    return process.env.ADMIN_PASSWORD;
+  },
+  get name(): string {
+    return process.env.ADMIN_NAME ?? "Administrador";
+  },
+};
+
 // ── Zenodo (ZEN-01) ──────────────────────────────────────────────────────────
 // Lazy getters (instead of values captured at import time) so unit tests can
 // set the variables at runtime, and so a missing ENCRYPTION_KEY only fails when
