@@ -29,7 +29,10 @@ export const deleteOrthancStudy: RequestHandler = async (req, res) => {
 
 export const getStudyFile: RequestHandler = async (req, res) => {
   try {
-    const buffer = await studiesService.getStudyDicomFile(req.params.studyId);
+    const buffer = await studiesService.getStudyDicomFile(
+      req.params.studyId,
+      req.user!.role,
+    );
     res.setHeader("Content-Type", "application/dicom");
     res.send(buffer);
   } catch (err) {
@@ -50,6 +53,7 @@ export const getInstanceFile: RequestHandler = async (req, res) => {
     const buffer = await studiesService.getInstanceDicomFile(
       req.params.studyId,
       req.params.instanceId,
+      req.user!.role,
     );
     res.setHeader("Content-Type", "application/dicom");
     res.send(buffer);

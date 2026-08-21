@@ -49,7 +49,16 @@ the DB on every request. Blocking additionally revokes refresh tokens (PR2), so
 | `GET /api/v1/studies/:id/zenodo` | ✓ | ✓ | ✓ |
 | `POST /api/v1/studies/:id/zenodo/check` | ✓ | ✓ | ✗ |
 
-*redacted / anonymized* mark investigador PHI handling delivered in PR4.
+*redacted / anonymized* mark investigador PHI handling (PR4):
+- **Metadata** (`*redacted*`): `patient_name` → `"ANONYMIZED"`, `patient_id` → a
+  deterministic pseudonym; the patient-name/id search is disabled for
+  investigador so it can't be used as an oracle.
+- **File downloads** (`*anonymized*`): the DICOM is passed through Orthanc's
+  anonymize (PHI tags stripped; study/series/SOP UIDs kept so the viewer can
+  still stack slices) and returned without persisting a new resource.
+- **Known limitation:** burned-in **pixel** PHI (text baked into the image,
+  common on ultrasound/secondary capture) is **not** removed by any of the
+  above and is out of scope for US-21.
 
 ### Upload — `/api/v1/studies/upload`, `/api/instances`
 | Route | admin | medico | investigador |

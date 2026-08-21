@@ -63,14 +63,32 @@ export async function deleteOrthancStudy(id: string): Promise<void> {
 // ── v1 (Postgres-backed) ──────────────────────────────────────────────────────
 
 /** The raw DICOM bytes of a study's first instance. */
-export async function getStudyDicomFile(studyId: string): Promise<Buffer> {
+/**
+ * Fetch an instance's DICOM bytes, anonymized when the caller is an
+ * investigador (PHI stripped by Orthanc; study/series/SOP UIDs kept so the
+ * viewer can still stack slices).
+ */
+async function fetchInstanceBytes(
+  instanceId: string,
+  role: Role,
+): Promise<Buffer> {
+  const { data } =
+    role === "investigador"
+      ? await orthancClient.anonymizeInstance(instanceId)
+      : await orthancClient.getInstanceFile(instanceId);
+  return Buffer.from(data);
+}
+
+export async function getStudyDicomFile(
+  studyId: string,
+  role: Role,
+): Promise<Buffer> {
   try {
     const instanceId = await repo.findFirstInstanceId(studyId);
     if (instanceId === null) {
       throw new HttpError(404, { error: "Study not found" });
     }
-    const { data } = await orthancClient.getInstanceFile(instanceId);
-    return Buffer.from(data);
+    return await fetchInstanceBytes(instanceId, role);
   } catch (err: any) {
     if (isHttpError(err)) throw err;
     if (err.response?.status === 404) {
@@ -100,14 +118,14 @@ export async function getStudyInstances(
 export async function getInstanceDicomFile(
   studyId: string,
   instanceId: string,
+  role: Role,
 ): Promise<Buffer> {
   try {
     const exists = await repo.instanceExists(studyId, instanceId);
     if (!exists) {
       throw new HttpError(404, { error: "Instance not found" });
     }
-    const { data } = await orthancClient.getInstanceFile(instanceId);
-    return Buffer.from(data);
+    return await fetchInstanceBytes(instanceId, role);
   } catch (err: any) {
     if (isHttpError(err)) throw err;
     if (err.response?.status === 404) {
