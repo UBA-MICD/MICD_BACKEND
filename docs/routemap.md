@@ -22,7 +22,20 @@ should be able to execute the whole feature from this document plus the plan.
     not interpolated); the runner now accepts `{ text, values }` statements.
   - PR1 integration mints role tokens via a shared JWT secret (`getAuthHeaderFor`);
     once PR2's user API lands, these can switch to real seeded accounts.
-- ⏭️ **NEXT: PR2 Step 2.1** — `src/modules/users/` admin CRUD (see below).
+- ✅ **PR2 — User management panel (US-H04 core)** complete. Backend: three atomic
+  commits (`8708608` audit actions, `aece078` users module, `c6eb727` login
+  stamp/refuse). Frontend: web `feat/us-21-rbac` `e9c3a55` (admin panel), vendored
+  to desktop `feat/us-21-rbac` `5990b11` (parity clean). 348 unit + 67 integration
+  (backend) and 162 (web) tests green. Notes:
+  - **Branches:** web + desktop had no `feat/us-21-rbac`; created it in each from
+    their current checkout (web was on `fix/desktop-seam-save-result`, desktop on
+    `dev`). The desktop sync also caught the renderer up to web HEAD (a small
+    pre-existing export-service delta rode along — parity is all-or-nothing).
+  - The invite issuance + `POST /:id/invite` are deferred to PR3 (they need the
+    `user_invites` table + mailer). PR2 `POST /users` creates an `invited`,
+    password-less user; PR3 wires the code + email.
+  - Migration runner extended in PR1 already covers the parameterized admin seed.
+- ⏭️ **NEXT: PR3 Step 3.1** — migration `007_user_invites` + invite flow.
 
 ## Ground rules (apply to every step)
 
