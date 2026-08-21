@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import swaggerUi from "swagger-ui-express";
 import { openapiSpec } from "./openapi";
+import { isHttpError, sendError } from "./shared/http-error";
 import { healthRouter } from "./modules/health/health.routes";
 import { authRouter } from "./modules/auth/auth.routes";
 import { studiesRouter } from "./modules/studies/studies.routes";
@@ -36,5 +37,25 @@ app.use(studiesRouter); // /api/studies*, /api/v1/studies* (auth-gated)
 app.use(uploadRouter); // /api/v1/studies/upload, /api/instances (auth-gated)
 app.use("/api/v1/zenodo", zenodoRouter); // Zenodo integration (auth-gated)
 app.use("/api/v1/activity", activityRouter); // Audit log reader (auth-gated)
+
+// ── Fallthrough handlers ──────────────────────────────────────────────────────
+// Unmatched route → JSON 404 (not Express's default HTML page).
+app.use((_req, res) => {
+  res.status(404).json({ error: "Not Found" });
+});
+
+// Global error handler. Services throw HttpError; requireRole and controllers
+// that forward with next(err) (e.g. activity.controller) land here. Map an
+// HttpError to its declared status/body, log and generalize anything else to a
+// JSON 500. Before this existed, a forwarded error rendered Express's default
+// HTML 500 page — a live defect on the activity routes. The 4-arg signature is
+// what marks this as Express error-handling middleware.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  if (!isHttpError(err)) {
+    console.error("Unhandled error:", err);
+  }
+  sendError(res, err);
+});
 
 export default app;
