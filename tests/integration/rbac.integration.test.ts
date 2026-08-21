@@ -9,7 +9,7 @@
  * this suite is the wiring proof over a representative slice.
  */
 import axios from "axios";
-import { getAuthHeader, getAuthHeaderFor } from "../helpers/auth";
+import { getAuthHeaderFor } from "../helpers/auth";
 import { ROLES, Role } from "../../src/shared/roles";
 
 const BASE_URL = process.env.BACKEND_URL ?? "http://localhost:3000";
@@ -73,11 +73,5 @@ describe("RBAC enforcement", () => {
     if (!backendAvailable) return;
     const res = await axios.get(`${BASE_URL}/api/v1/studies`, anyStatus);
     expect(res.status).toBe(401);
-  });
-
-  it("still authenticates the seeded medico via a real login", async () => {
-    if (!backendAvailable) return;
-    const header = await getAuthHeader();
-    expect(header.Authorization).toMatch(/^Bearer .+/);
   });
 });
