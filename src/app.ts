@@ -9,6 +9,7 @@ import { studiesRouter } from "./modules/studies/studies.routes";
 import { uploadRouter } from "./modules/upload/upload.routes";
 import { zenodoRouter } from "./modules/zenodo/zenodo.routes";
 import activityRouter from "./modules/activity/activity.routes";
+import usersRouter from "./modules/users/users.routes";
 
 /**
  * Assemble the Express application from the feature routers. This module holds
@@ -36,7 +37,8 @@ app.use("/api", healthRouter); // public: /api/livez, /api/readyz, /api/health (
 app.use(studiesRouter); // /api/studies*, /api/v1/studies* (auth-gated)
 app.use(uploadRouter); // /api/v1/studies/upload, /api/instances (auth-gated)
 app.use("/api/v1/zenodo", zenodoRouter); // Zenodo integration (auth-gated)
-app.use("/api/v1/activity", activityRouter); // Audit log reader (auth-gated)
+app.use("/api/v1/activity", activityRouter); // Audit log reader (admin-only)
+app.use("/api/v1/users", usersRouter); // User management (admin-only)
 
 // ── Fallthrough handlers ──────────────────────────────────────────────────────
 // Unmatched route → JSON 404 (not Express's default HTML page).
