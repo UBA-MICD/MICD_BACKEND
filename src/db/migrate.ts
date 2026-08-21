@@ -5,6 +5,7 @@ import { migration003 } from "./migrations/003_zenodo";
 import { migration004 } from "./migrations/004_activity_log";
 import { migration005 } from "./migrations/005_zenodo_manual_sync";
 import { migration006 } from "./migrations/006_roles";
+import { migration007 } from "./migrations/007_user_invites";
 
 /**
  * A single migration statement. Either raw SQL (may contain several
@@ -34,6 +35,7 @@ const migrations: Migration[] = [
   migration004,
   migration005,
   migration006,
+  migration007,
 ];
 
 /** Apply every migration in order. Idempotent — safe to call on each boot. */
