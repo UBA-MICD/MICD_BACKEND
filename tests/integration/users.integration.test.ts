@@ -147,7 +147,18 @@ describe("guards", () => {
 
   it("refuses demoting the last effective admin (409)", async () => {
     if (!backendAvailable) return;
-    // Create an admin and make it active — the only role=admin+active row.
+
+    // The environment seeds a permanent bootstrap admin (migration 006), so
+    // "Sole Admin" below isn't actually the last one until every other
+    // role=admin+active row is parked as blocked. Snapshot and restore them
+    // around the assertion so this test is self-contained either way.
+    const before = await axios.get(`${BASE_URL}/api/v1/users`, { headers: adminHeaders });
+    const otherActiveAdmins: number[] = before.data
+      .filter((u: any) => u.role === "admin" && u.status === "active")
+      .map((u: any) => u.id);
+
+    // Create an admin and make it active — it'll become the only role=admin+
+    // active row once the loop below parks every pre-existing one.
     const { res } = await createUser("admin", "Sole Admin");
     const id = res.data.id;
     await axios.patch(
@@ -155,27 +166,46 @@ describe("guards", () => {
       { status: "active" },
       { headers: adminHeaders, ...anyStatus },
     );
-    const demote = await axios.patch(
-      `${BASE_URL}/api/v1/users/${id}/role`,
-      { role: "medico" },
-      { headers: adminHeaders, ...anyStatus },
-    );
-    expect(demote.status).toBe(409);
 
-    // Cleanup: a second admin lets us remove the first without tripping the guard.
-    const { res: second } = await createUser("admin", "Second Admin");
-    await axios.patch(
-      `${BASE_URL}/api/v1/users/${second.data.id}/status`,
-      { status: "active" },
-      { headers: adminHeaders, ...anyStatus },
-    );
-    await axios.delete(`${BASE_URL}/api/v1/users/${id}`, {
-      headers: adminHeaders,
-      ...anyStatus,
-    });
-    await axios.delete(`${BASE_URL}/api/v1/users/${second.data.id}`, {
-      headers: adminHeaders,
-      ...anyStatus,
-    });
+    for (const otherId of otherActiveAdmins) {
+      await axios.patch(
+        `${BASE_URL}/api/v1/users/${otherId}/status`,
+        { status: "blocked" },
+        { headers: adminHeaders, ...anyStatus },
+      );
+    }
+
+    try {
+      const demote = await axios.patch(
+        `${BASE_URL}/api/v1/users/${id}/role`,
+        { role: "medico" },
+        { headers: adminHeaders, ...anyStatus },
+      );
+      expect(demote.status).toBe(409);
+    } finally {
+      for (const otherId of otherActiveAdmins) {
+        await axios.patch(
+          `${BASE_URL}/api/v1/users/${otherId}/status`,
+          { status: "active" },
+          { headers: adminHeaders, ...anyStatus },
+        );
+      }
+
+      // A second admin lets us remove the first without tripping the guard.
+      const { res: second } = await createUser("admin", "Second Admin");
+      await axios.patch(
+        `${BASE_URL}/api/v1/users/${second.data.id}/status`,
+        { status: "active" },
+        { headers: adminHeaders, ...anyStatus },
+      );
+      await axios.delete(`${BASE_URL}/api/v1/users/${id}`, {
+        headers: adminHeaders,
+        ...anyStatus,
+      });
+      await axios.delete(`${BASE_URL}/api/v1/users/${second.data.id}`, {
+        headers: adminHeaders,
+        ...anyStatus,
+      });
+    }
   });
 });
