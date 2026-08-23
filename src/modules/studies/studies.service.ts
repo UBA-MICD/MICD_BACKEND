@@ -15,6 +15,7 @@ import {
   type ImportedRecord,
 } from "../zenodo/zenodo-sync.service";
 import { logAction, AUDIT_ACTIONS } from "../../shared/audit";
+import { assertValidOrthancId } from "../../shared/orthanc-id";
 import * as repo from "./studies.repository";
 import { StudyFilters } from "./studies.repository";
 
@@ -35,6 +36,8 @@ export async function listOrthancStudies(): Promise<unknown> {
 
 /** GET /api/studies/:id — mirror one Orthanc study. */
 export async function getOrthancStudy(id: string): Promise<unknown> {
+  // Caller-supplied id going straight into an admin-authenticated Orthanc URL.
+  assertValidOrthancId(id);
   try {
     const { data } = await orthancClient.getStudy(id);
     return data;
@@ -48,6 +51,7 @@ export async function getOrthancStudy(id: string): Promise<unknown> {
 
 /** DELETE /api/studies/:id — remove a study from Orthanc. */
 export async function deleteOrthancStudy(id: string): Promise<void> {
+  assertValidOrthancId(id);
   try {
     await orthancClient.deleteStudy(id);
   } catch (err: any) {

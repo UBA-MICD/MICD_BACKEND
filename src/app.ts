@@ -1,6 +1,8 @@
 import express from "express";
-import cors from "cors";
 import swaggerUi from "swagger-ui-express";
+import { serverConfig } from "./config/env";
+import { corsMiddleware } from "./middleware/cors.middleware";
+import { globalRateLimiter } from "./middleware/rate-limit.middleware";
 import { openapiSpec } from "./openapi";
 import { healthRouter } from "./modules/health/health.routes";
 import { authRouter } from "./modules/auth/auth.routes";
@@ -16,14 +18,19 @@ import activityRouter from "./modules/activity/activity.routes";
  */
 export const app = express();
 
-// Trust exactly one hop (the nginx reverse proxy in front of the web
-// deployment) so req.ip / X-Forwarded-For-derived values — used by the login
-// rate limiter to key on the real client IP — aren't just nginx's container IP
-// for every request.
-app.set("trust proxy", 1);
+// How many proxy hops may set X-Forwarded-For. Defaults to 1 for the nginx
+// deployment, where it keeps the login rate limiter keyed on the real client IP
+// instead of nginx's container IP. Deployments reached directly — the desktop
+// app talking to its own backend — must set TRUST_PROXY=0, otherwise a client
+// can forge the header and rotate past the limiter. See config/env.ts.
+app.set("trust proxy", serverConfig.trustProxy);
 
-app.use(cors());
+app.use(corsMiddleware);
 app.use(express.json());
+
+// Backstop budget for every route (liveness/readiness excepted — see the
+// middleware). Route-specific limiters below are tighter where it matters.
+app.use(globalRateLimiter);
 
 app.use("/auth", authRouter); // public: /auth/login, /auth/refresh, /auth/logout
 
