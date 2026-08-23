@@ -82,4 +82,21 @@ describe("orthancClient", () => {
     await orthancClient.deleteInstance("i1");
     expect(mockedAxios.delete).toHaveBeenCalledWith(`${BASE}/instances/i1`, AUTH);
   });
+
+  // Callers are expected to validate ids first, but these requests carry
+  // Orthanc's admin credentials, so the client escapes them too: an id must
+  // stay one path segment and can never open a new one.
+  it("escapes ids so they cannot break out of their path segment", async () => {
+    await orthancClient.getStudy("../../tools/execute-script");
+    expect(mockedAxios.get).toHaveBeenCalledWith(
+      `${BASE}/studies/..%2F..%2Ftools%2Fexecute-script`,
+      AUTH,
+    );
+
+    await orthancClient.getInstanceFile("a/b");
+    expect(mockedAxios.get).toHaveBeenCalledWith(
+      `${BASE}/instances/a%2Fb/file`,
+      expect.objectContaining({ responseType: "arraybuffer" }),
+    );
+  });
 });

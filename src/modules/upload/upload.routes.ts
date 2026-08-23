@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { requireAuth, requireRole } from "../../middleware/auth.middleware";
 import { uploadSingleFile } from "../../middleware/upload.middleware";
+import { uploadRateLimiter } from "../../middleware/rate-limit.middleware";
 import { uploadStudy } from "./upload.controller";
 
 /**

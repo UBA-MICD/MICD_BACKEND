@@ -1,8 +1,11 @@
 import { orthancClient } from "../../clients/orthanc.client";
 import { HttpError } from "../../shared/http-error";
+import { uploadConfig } from "../../config/env";
 import * as repo from "./upload.repository";
 
-const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500 MB
+// Same ceiling multer enforces while streaming (see upload.middleware.ts);
+// re-checked here as defense in depth for callers that bypass the middleware.
+const MAX_FILE_SIZE = uploadConfig.maxFileBytes;
 
 // Tags use Latin-1 encoding in old DICOMs — normalize to UTF-8 safe string
 function normalizeText(value: unknown): string {
@@ -41,7 +44,7 @@ export async function uploadDicom(
   // 413 — file too large
   if (file.size > MAX_FILE_SIZE) {
     throw new HttpError(413, {
-      error: "File exceeds maximum allowed size of 500 MB",
+      error: `File exceeds maximum allowed size of ${MAX_FILE_SIZE} bytes`,
     });
   }
 
