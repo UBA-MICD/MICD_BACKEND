@@ -70,6 +70,13 @@ services:
       BCRYPT_ROUNDS: ${BCRYPT_ROUNDS:-12}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@micd.local}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD must be set in .env}
+      ADMIN_NAME: ${ADMIN_NAME:-Administrador}
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-MICD <no-reply@micd.local>}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
       ZENODO_TIMEOUT_MS: ${ZENODO_TIMEOUT_MS:-10000}
     depends_on:
