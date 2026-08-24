@@ -1,5 +1,6 @@
 import { RequestHandler } from "express";
 import { sendError } from "../../shared/http-error";
+import { logAction, AUDIT_ACTIONS } from "../../shared/audit";
 import { uploadDicom } from "./upload.service";
 
 /** POST handler for DICOM ingest (shared by the v1 and legacy upload routes). */
@@ -16,6 +17,14 @@ export const uploadStudy: RequestHandler = async (req, res) => {
       { buffer: req.file.buffer, size: req.file.size },
       req.query.force === "true",
     );
+    // Resource id is only known once Orthanc/Postgres assign it, so the
+    // audit write happens here rather than via param-based middleware (TK-06).
+    void logAction({
+      userId: req.user?.sub ?? null,
+      action: AUDIT_ACTIONS.STUDY_UPLOADED,
+      resourceId: String(result.study.orthanc_study_id),
+      ip: req.ip ?? "",
+    });
     res.status(201).json(result);
   } catch (err) {
     sendError(res, err);
