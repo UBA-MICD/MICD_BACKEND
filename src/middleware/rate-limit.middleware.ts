@@ -24,7 +24,7 @@ export const loginRateLimiter = rateLimit({
   message: { error: "Too many login attempts. Try again later." },
 });
 
- /** 
+/**
  * Rate limiter for the public invite endpoints (validate + accept). Separate
  * from the login limiter so a burst of invite lookups can't lock out logins,
  * and vice versa. A little more generous than login (a legit user may reload
@@ -39,16 +39,16 @@ export const inviteRateLimiter = rateLimit({
 });
 
 /**
-* Refresh takes an unguessable token, but it was previously the one auth route
-* with no ceiling at all — leaving a free oracle to grind tokens against and an
-* unbounded way to force bcrypt-free DB work. The budget is well above what a
-* real client needs (access tokens last 15 minutes, so a normal session
-* refreshes a handful of times per window).
-*/
+ * Refresh takes an unguessable token, but it was previously the one auth route
+ * with no ceiling at all — leaving a free oracle to grind tokens against and an
+ * unbounded way to force bcrypt-free DB work. The budget is well above what a
+ * real client needs (access tokens last 15 minutes, so a normal session
+ * refreshes a handful of times per window).
+ */
 export const refreshRateLimiter = rateLimit({
- ...base,
- limit: rateLimitConfig.refreshMax,
- message: { error: "Too many refresh attempts. Try again later." },
+  ...base,
+  limit: rateLimitConfig.refreshMax,
+  message: { error: "Too many refresh attempts. Try again later." },
 });
 
 /**
@@ -63,14 +63,14 @@ export const uploadRateLimiter = rateLimit({
 });
 
 /**
-* Backstop for every other route. Liveness/readiness probes are exempt: the
-* container healthcheck polls them continuously, and letting a traffic spike
-* exhaust the shared budget would turn into 429s on the probe and get the
-* container restarted — turning a load problem into an outage.
-*/
+ * Backstop for every other route. Liveness/readiness probes are exempt: the
+ * container healthcheck polls them continuously, and letting a traffic spike
+ * exhaust the shared budget would turn into 429s on the probe and get the
+ * container restarted — turning a load problem into an outage.
+ */
 export const globalRateLimiter = rateLimit({
- ...base,
- limit: rateLimitConfig.globalMax,
- skip: (req) => req.path === "/api/livez" || req.path === "/api/readyz",
- message: { error: "Too many requests. Try again later." },
+  ...base,
+  limit: rateLimitConfig.globalMax,
+  skip: (req) => req.path === "/api/livez" || req.path === "/api/readyz",
+  message: { error: "Too many requests. Try again later." },
 });

@@ -1,10 +1,8 @@
 import { Router } from "express";
 import {
   loginRateLimiter,
-  refreshRateLimiter, 
   inviteRateLimiter,
-  uploadRateLimiter,
-  globalRateLimiter
+  refreshRateLimiter,
 } from "../../middleware/rate-limit.middleware";
 import {
   loginHandler,

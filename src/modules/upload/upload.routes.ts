@@ -19,7 +19,14 @@ const STAFF = [requireAuth, requireRole("admin", "medico")];
 uploadRouter.post(
   "/api/v1/studies/upload",
   ...STAFF,
+  uploadRateLimiter,
   uploadSingleFile,
   uploadStudy,
 );
-uploadRouter.post("/api/instances", ...STAFF, uploadSingleFile, uploadStudy);
+uploadRouter.post(
+  "/api/instances",
+  ...STAFF,
+  uploadRateLimiter,
+  uploadSingleFile,
+  uploadStudy,
+);

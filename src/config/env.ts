@@ -151,6 +151,17 @@ export const appBaseUrl = {
 // and password are provided, so CI — which does `cp .env.example .env` and
 // leaves these unset — boots without a seeded admin. Lazy getters so the
 // migration reads whatever the environment holds at run time.
+export const adminSeed = {
+  get email(): string | undefined {
+    return process.env.ADMIN_EMAIL;
+  },
+  get password(): string | undefined {
+    return process.env.ADMIN_PASSWORD;
+  },
+  get name(): string {
+    return process.env.ADMIN_NAME ?? "Administrador";
+  },
+};
 
 /**
  * Rate-limit budgets, all per IP per window.
@@ -180,18 +191,6 @@ export const uploadConfig = {
   ),
 };
 
-export const adminSeed = {
-  get email(): string | undefined {
-    return process.env.ADMIN_EMAIL;
-  },
-  get password(): string | undefined {
-    return process.env.ADMIN_PASSWORD;
-  },
-  get name(): string {
-    return process.env.ADMIN_NAME ?? "Administrador";
-  },
-};
-
 // ── Zenodo (ZEN-01) ──────────────────────────────────────────────────────────
 // Lazy getters (instead of values captured at import time) so unit tests can
 // set the variables at runtime, and so a missing ENCRYPTION_KEY only fails when
@@ -218,5 +217,18 @@ export const zenodoQuota = {
   /** Storage limit compared against locally recorded published-file sizes. */
   get limitGb(): number {
     return parseInt(process.env.ZENODO_QUOTA_LIMIT_GB ?? "50", 10);
+  },
+};
+
+
+export const orthancStorageConfig = {
+  get maxMb(): number | null {
+    const v = process.env.ORTHANC_MAX_STORAGE_MB;
+    if (!v) return null;
+    const n = parseInt(v, 10);
+    return isNaN(n) || n <= 0 ? null : n;
+  },
+  get alertPct(): number {
+    return parseInt(process.env.ORTHANC_STORAGE_ALERT_PCT ?? "85", 10);
   },
 };

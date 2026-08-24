@@ -23,6 +23,9 @@ export const orthancClient = {
   getSystem: (): Promise<AxiosResponse> =>
     axios.get(`${BASE}/system`, { auth, timeout: 3000 }),
 
+  getStatistics: (): Promise<AxiosResponse> =>
+    axios.get(`${BASE}/statistics`, { auth, timeout: 3000 }),
+
   listStudies: (): Promise<AxiosResponse> =>
     axios.get(`${BASE}/studies`, { auth }),
 
