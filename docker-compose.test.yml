@@ -72,7 +72,7 @@ services:
       DB_PORT: 5432
       DB_NAME: micd
       DB_USER: micd
-      DB_PASSWORD: test-db-password-not-for-production
+      DB_PASSWORD: test-db-secret
       ORTHANC_URL: http://orthanc:8042
       ORTHANC_USERNAME: orthanc
       ORTHANC_PASSWORD: test-orthanc-password-not-for-production
