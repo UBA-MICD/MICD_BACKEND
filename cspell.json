@@ -39,6 +39,12 @@
     "pgcrypto",
     "testpassword",
     "livez",
-    "readyz"
+    "readyz",
+    "correctpw",
+    "badpw",
+    "investigador",
+    "pseudonymizes",
+    "pseudonymized",
+    "upserts"
   ]
 }
