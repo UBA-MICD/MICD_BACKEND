@@ -19,7 +19,13 @@ function appWith(trustProxy?: string) {
   jest.resetModules();
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { app } = require("../../src/app");
+  // app.ts ends with a catch-all 404 handler + error handler that never call
+  // next(), so a route appended here would be shadowed. Splice it in just
+  // before those last two layers instead.
   app.get("/__ip", (req: any, res: any) => res.json({ ip: req.ip }));
+  const stack = app._router.stack;
+  const ipLayer = stack.pop();
+  stack.splice(stack.length - 2, 0, ipLayer);
   return app;
 }
 

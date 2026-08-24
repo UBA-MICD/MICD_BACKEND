@@ -52,14 +52,14 @@ export const refreshRateLimiter = rateLimit({
 });
 
 /**
- * Uploads are the most expensive route: each one buffers a file in memory and
- * pushes it to Orthanc. The budget has to clear a bulk seed run from a single
- * IP, so it bounds runaway clients rather than shaping normal use.
- */
+* Uploads are the most expensive route: each one buffers a file in memory and
+* pushes it to Orthanc. The budget has to clear a bulk seed run from a single
+* IP, so it bounds runaway clients rather than shaping normal use.
+*/
 export const uploadRateLimiter = rateLimit({
-  ...base,
-  limit: rateLimitConfig.uploadMax,
-  message: { error: "Too many uploads. Try again later." },
+ ...base,
+ limit: rateLimitConfig.uploadMax,
+ message: { error: "Too many uploads. Try again later." },
 });
 
 /**
