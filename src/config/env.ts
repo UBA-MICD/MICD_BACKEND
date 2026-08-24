@@ -149,3 +149,16 @@ export const zenodoQuota = {
     return parseInt(process.env.ZENODO_QUOTA_LIMIT_GB ?? "50", 10);
   },
 };
+
+
+export const orthancStorageConfig = {
+  get maxMb(): number | null {
+    const v = process.env.ORTHANC_MAX_STORAGE_MB;
+    if (!v) return null;
+    const n = parseInt(v, 10);
+    return isNaN(n) || n <= 0 ? null : n;
+  },
+  get alertPct(): number {
+    return parseInt(process.env.ORTHANC_STORAGE_ALERT_PCT ?? "85", 10);
+  },
+};
