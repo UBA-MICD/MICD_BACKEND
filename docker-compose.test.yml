@@ -7,6 +7,11 @@
 # stack without colliding. No host ports are published — the runner talks to the
 # services by name. No .env is required; test secrets are inlined below.
 #
+# Those secrets have to be non-default values: the stack runs NODE_ENV=production
+# (to exercise the real runtime image), and config/env.ts refuses to boot in
+# production while DB_PASSWORD is "micd" or ORTHANC_PASSWORD is "orthanc". Keep
+# any change to them in sync across postgres, orthanc, backend and tests.
+#
 # Run with:  make test-integration-docker
 #            (or: docker compose -f docker-compose.test.yml up --build \
 #                   --abort-on-container-exit --exit-code-from tests)

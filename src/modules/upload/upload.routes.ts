@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { requireAuth, requireRole } from "../../middleware/auth.middleware";
 import { uploadSingleFile } from "../../middleware/upload.middleware";
+import { uploadRateLimiter } from "../../middleware/rate-limit.middleware";
 import { uploadStudy } from "./upload.controller";
 
 /**
@@ -18,7 +19,14 @@ const STAFF = [requireAuth, requireRole("admin", "medico")];
 uploadRouter.post(
   "/api/v1/studies/upload",
   ...STAFF,
+  uploadRateLimiter,
   uploadSingleFile,
   uploadStudy,
 );
-uploadRouter.post("/api/instances", ...STAFF, uploadSingleFile, uploadStudy);
+uploadRouter.post(
+  "/api/instances",
+  ...STAFF,
+  uploadRateLimiter,
+  uploadSingleFile,
+  uploadStudy,
+);
