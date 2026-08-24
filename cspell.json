@@ -37,6 +37,8 @@
     "zenodo",
     "pgcrypto's",
     "pgcrypto",
-    "testpassword"
+    "testpassword",
+    "livez",
+    "readyz"
   ]
 }
