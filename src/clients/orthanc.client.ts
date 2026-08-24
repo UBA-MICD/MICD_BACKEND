@@ -38,6 +38,25 @@ export const orthancClient = {
       responseType: "arraybuffer",
     }),
 
+  /**
+   * Anonymized DICOM bytes for an instance — for investigador downloads. Orthanc
+   * strips PHI tags (PatientName/ID, dates, physician/institution, private tags)
+   * and returns the DICOM in the response body WITHOUT persisting a new resource
+   * (verified against Orthanc 24.1.2). The study/series/SOP UIDs are kept (Force
+   * is required to keep identifying UIDs) so the viewer can still stack a study's
+   * slices into a volume — UIDs are opaque identifiers, not patient identity.
+   */
+  anonymizeInstance: (id: string): Promise<AxiosResponse<ArrayBuffer>> =>
+    axios.post<ArrayBuffer>(
+      `${BASE}/instances/${id}/anonymize`,
+      {
+        Keep: ["StudyInstanceUID", "SeriesInstanceUID", "SOPInstanceUID"],
+        Force: true,
+        KeepPrivateTags: false,
+      },
+      { auth, responseType: "arraybuffer" },
+    ),
+
   getInstancePreview: (id: string): Promise<AxiosResponse<ArrayBuffer>> =>
     axios.get<ArrayBuffer>(`${BASE}/instances/${seg(id)}/preview`, {
       auth,

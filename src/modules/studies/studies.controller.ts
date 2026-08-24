@@ -29,7 +29,10 @@ export const deleteOrthancStudy: RequestHandler = async (req, res) => {
 
 export const getStudyFile: RequestHandler = async (req, res) => {
   try {
-    const buffer = await studiesService.getStudyDicomFile(req.params.studyId);
+    const buffer = await studiesService.getStudyDicomFile(
+      req.params.studyId,
+      req.user!.role,
+    );
     res.setHeader("Content-Type", "application/dicom");
     res.send(buffer);
   } catch (err) {
@@ -50,6 +53,7 @@ export const getInstanceFile: RequestHandler = async (req, res) => {
     const buffer = await studiesService.getInstanceDicomFile(
       req.params.studyId,
       req.params.instanceId,
+      req.user!.role,
     );
     res.setHeader("Content-Type", "application/dicom");
     res.send(buffer);
@@ -72,8 +76,12 @@ export const listStudies: RequestHandler = async (req, res) => {
       search: (req.query.search as string) || null,
       zenodoLinked: req.query.zenodo_linked === "true" ? true : null,
     };
-    const result = await studiesService.listStudies(page, limit, filters);
-    console.log(`[studies] listStudies — total=${result.total} page=${page} filters=${JSON.stringify(filters)} studies=${JSON.stringify(result.studies.map(s => ({ id: s.orthanc_study_id, patient: s.patient_name, modality: s.modality })))}`);
+    const result = await studiesService.listStudies(
+      page,
+      limit,
+      filters,
+      req.user!.role,
+    );
     res.json(result);
   } catch (err) {
     sendError(res, err);

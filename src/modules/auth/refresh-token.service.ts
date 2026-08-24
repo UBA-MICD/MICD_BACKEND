@@ -1,8 +1,24 @@
 import { createHash } from "crypto";
+import type { Pool, PoolClient } from "pg";
 import { pool } from "../../db/pool";
 
 function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
+}
+
+/**
+ * Revoke every live refresh token for a user — used when an admin blocks or
+ * deletes an account so the only residual access is the ≤15-minute access
+ * token. Accepts an optional client so it can run inside the delete transaction.
+ */
+export async function revokeAllRefreshTokensForUser(
+  userId: number,
+  client: Pool | PoolClient = pool,
+): Promise<void> {
+  await client.query(
+    "UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL",
+    [userId],
+  );
 }
 
 export async function storeRefreshToken(

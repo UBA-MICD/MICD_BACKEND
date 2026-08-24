@@ -1,45 +1,57 @@
 import { Router } from "express";
-import { requireAuth } from "../../middleware/auth.middleware";
+import { requireAuth, requireRole } from "../../middleware/auth.middleware";
+import { ROLES } from "../../shared/roles";
 import * as ctrl from "./zenodo.controller";
 
 /**
- * Zenodo integration routes, mounted at /api/v1/zenodo in app.ts. The original
- * implementation gated these behind an admin role; this backend has a flat
- * user model (no roles), so every route is gated by requireAuth like the rest
- * of the data routes.
+ * Zenodo integration routes, mounted at /api/v1/zenodo in app.ts.
+ *
+ * These are role-gated per route (the blanket requireAuth this router used to
+ * carry is gone):
+ *   - Credential + sync configuration and publication are admin-only (they hold
+ *     secrets or are irreversible and outward-facing).
+ *   - Operational reads, import, and quota are open to clinical staff.
+ *   - Public-corpus search/resolve is open to all three roles — it queries
+ *     Zenodo's own public data and exposes no local PHI.
  */
 export const zenodoRouter = Router();
 
-zenodoRouter.use(requireAuth);
+const ADMIN = [requireAuth, requireRole("admin")];
+const STAFF = [requireAuth, requireRole("admin", "medico")];
+const ALL = [requireAuth, requireRole(...ROLES)];
 
-// ── Credentials configuration (ZEN-01) ───────────────────────────────────────
-zenodoRouter.post("/config", ctrl.configureToken);
-zenodoRouter.get("/config/status", ctrl.getConfigStatus);
-zenodoRouter.delete("/config/:environment", ctrl.removeConfig);
+// ── Credentials configuration (ZEN-01) — admin ────────────────────────────────
+zenodoRouter.post("/config", ...ADMIN, ctrl.configureToken);
+zenodoRouter.delete("/config/:environment", ...ADMIN, ctrl.removeConfig);
+zenodoRouter.get("/config/status", ...STAFF, ctrl.getConfigStatus);
 
 // ── Panel state (ZEN-02): connection health per environment ──────────────────
-zenodoRouter.get("/health", ctrl.getHealth);
+zenodoRouter.get("/health", ...STAFF, ctrl.getHealth);
 
-// ── Search (ZEN-06) ──────────────────────────────────────────────────────────
-zenodoRouter.get("/search", ctrl.search);
-zenodoRouter.get("/records/:recordId", ctrl.getRecordDetail);
+// ── Search (ZEN-06) — public Zenodo corpus, no local PHI ─────────────────────
+zenodoRouter.get("/search", ...ALL, ctrl.search);
+zenodoRouter.get("/records/:recordId", ...ALL, ctrl.getRecordDetail);
 
 // ── Periodic metadata sync (ZEN-10) ──────────────────────────────────────────
-zenodoRouter.get("/config/sync", ctrl.getSyncConfiguration);
-zenodoRouter.put("/config/sync", ctrl.setSyncConfiguration);
-zenodoRouter.post("/config/sync/run", ctrl.runSyncNow);
-zenodoRouter.get("/config/sync/logs", ctrl.getSyncLogList);
-zenodoRouter.get("/config/sync/status", ctrl.getSyncStatusHandler);
+zenodoRouter.get("/config/sync", ...ADMIN, ctrl.getSyncConfiguration);
+zenodoRouter.put("/config/sync", ...ADMIN, ctrl.setSyncConfiguration);
+zenodoRouter.post("/config/sync/run", ...ADMIN, ctrl.runSyncNow);
+zenodoRouter.get("/config/sync/logs", ...STAFF, ctrl.getSyncLogList);
+zenodoRouter.get("/config/sync/status", ...STAFF, ctrl.getSyncStatusHandler);
 
-// ── Import (ZEN-07) ──────────────────────────────────────────────────────────
-zenodoRouter.post("/import", ctrl.importRecord);
-zenodoRouter.get("/imports/:importId", ctrl.getImportStatus);
-zenodoRouter.get("/resolve", ctrl.resolveRecord);
+// ── Import (ZEN-07) — clinical staff ─────────────────────────────────────────
+zenodoRouter.post("/import", ...STAFF, ctrl.importRecord);
+zenodoRouter.get("/imports/:importId", ...STAFF, ctrl.getImportStatus);
+zenodoRouter.get("/resolve", ...ALL, ctrl.resolveRecord);
 
 // ── Quota & rate limit (ZEN-17) ──────────────────────────────────────────────
-zenodoRouter.get("/quota", ctrl.getQuota);
+zenodoRouter.get("/quota", ...STAFF, ctrl.getQuota);
 
-// ── Publish (ZEN-05) ─────────────────────────────────────────────────────────
-zenodoRouter.post("/publish", ctrl.publish);
-zenodoRouter.get("/depositions/:depositionId", ctrl.getDepositionStatus);
-zenodoRouter.post("/depositions/:depositionId/retry", ctrl.retryDeposition);
+// ── Publish (ZEN-05) — admin only: irreversible and outward-facing ───────────
+zenodoRouter.post("/publish", ...ADMIN, ctrl.publish);
+zenodoRouter.get("/depositions/:depositionId", ...ADMIN, ctrl.getDepositionStatus);
+zenodoRouter.post(
+  "/depositions/:depositionId/retry",
+  ...ADMIN,
+  ctrl.retryDeposition,
+);

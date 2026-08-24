@@ -5,7 +5,7 @@ import {
   verifyRefreshToken,
 } from "../../../src/modules/auth/jwt.service";
 
-const PAYLOAD = { sub: 1, email: "user@micd.local" };
+const PAYLOAD = { sub: 1, email: "user@micd.local", role: "medico" as const };
 
 describe("jwt.service — access tokens", () => {
   it("signs and verifies a valid access token", () => {

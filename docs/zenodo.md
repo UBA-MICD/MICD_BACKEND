@@ -1,6 +1,6 @@
 # Zenodo Integration
 
-All Zenodo endpoints live under `/api/v1/zenodo` and require a valid JWT (`Authorization: Bearer <token>`). This backend has a flat user model (no roles) — the routes the original design marked as admin-only are gated by the same `requireAuth` as the rest of the API.
+All Zenodo endpoints live under `/api/v1/zenodo` and require a valid JWT (`Authorization: Bearer <token>`) plus a permitted role — credential/sync configuration and publication are admin-only, operational reads and import are open to clinical staff (admin + medico), and the public-corpus search/resolve routes are open to all three roles. See [`rbac.md`](./rbac.md) for the full route → role matrix.
 
 Environments: `sandbox` (sandbox.zenodo.org) and `production` (zenodo.org). Pass `environment` in the request body or query string; defaults to `production` where applicable.
 
