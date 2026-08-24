@@ -56,7 +56,7 @@ export const exportActivity: RequestHandler = async (req, res, next) => {
     });
 
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
-    res.setHeader("Content-Disposition", "attachment; filename=zenodo-log.csv");
+    res.setHeader("Content-Disposition", "attachment; filename=audit-log.csv");
     res.send(csv);
   } catch (err) {
     next(err);
