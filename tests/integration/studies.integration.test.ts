@@ -24,7 +24,9 @@ beforeAll(async () => {
 describe("GET /api/v1/studies", () => {
   it("returns paginated envelope with default page=1 limit=20", async () => {
     if (!backendAvailable) return;
-    const { data } = await axios.get(`${BASE_URL}/api/v1/studies`, { headers: authHeader });
+    const { data } = await axios.get(`${BASE_URL}/api/v1/studies`, {
+      headers: authHeader,
+    });
     expect(data).toMatchObject({
       page: 1,
       limit: 20,
@@ -37,7 +39,9 @@ describe("GET /api/v1/studies", () => {
 
   it("returns num_instances per study", async () => {
     if (!backendAvailable) return;
-    const { data } = await axios.get(`${BASE_URL}/api/v1/studies`, { headers: authHeader });
+    const { data } = await axios.get(`${BASE_URL}/api/v1/studies`, {
+      headers: authHeader,
+    });
     if (data.studies.length === 0) return;
     const s = data.studies[0];
     expect(s).toHaveProperty("num_instances");
@@ -57,15 +61,21 @@ describe("GET /api/v1/studies", () => {
 
   it("clamps limit to max 100", async () => {
     if (!backendAvailable) return;
-    const { data } = await axios.get(`${BASE_URL}/api/v1/studies?limit=999`, { headers: authHeader });
+    const { data } = await axios.get(`${BASE_URL}/api/v1/studies?limit=999`, {
+      headers: authHeader,
+    });
     expect(data.limit).toBe(100);
   });
 
   it("page 2 returns different studies than page 1 (when total > limit)", async () => {
     if (!backendAvailable) return;
-    const p1 = await axios.get(`${BASE_URL}/api/v1/studies?page=1&limit=1`, { headers: authHeader });
+    const p1 = await axios.get(`${BASE_URL}/api/v1/studies?page=1&limit=1`, {
+      headers: authHeader,
+    });
     if (p1.data.totalPages < 2) return;
-    const p2 = await axios.get(`${BASE_URL}/api/v1/studies?page=2&limit=1`, { headers: authHeader });
+    const p2 = await axios.get(`${BASE_URL}/api/v1/studies?page=2&limit=1`, {
+      headers: authHeader,
+    });
     expect(p1.data.studies[0].orthanc_study_id).not.toBe(
       p2.data.studies[0].orthanc_study_id,
     );
@@ -73,7 +83,9 @@ describe("GET /api/v1/studies", () => {
 
   it("filters by modality", async () => {
     if (!backendAvailable) return;
-    const allRes = await axios.get(`${BASE_URL}/api/v1/studies`, { headers: authHeader });
+    const allRes = await axios.get(`${BASE_URL}/api/v1/studies`, {
+      headers: authHeader,
+    });
     if (allRes.data.studies.length === 0) return;
 
     const modality: string = allRes.data.studies[0].modality;
@@ -111,7 +123,9 @@ describe("GET /api/v1/studies", () => {
 
   it("search by patient name returns matching studies", async () => {
     if (!backendAvailable) return;
-    const allRes = await axios.get(`${BASE_URL}/api/v1/studies`, { headers: authHeader });
+    const allRes = await axios.get(`${BASE_URL}/api/v1/studies`, {
+      headers: authHeader,
+    });
     if (allRes.data.studies.length === 0) return;
 
     const name: string = allRes.data.studies[0].patient_name ?? "";
@@ -143,10 +157,55 @@ describe("GET /api/v1/studies", () => {
 
   it("groups multiple instances of the same study into one row", async () => {
     if (!backendAvailable) return;
-    const { data } = await axios.get(`${BASE_URL}/api/v1/studies`, { headers: authHeader });
+    const { data } = await axios.get(`${BASE_URL}/api/v1/studies`, {
+      headers: authHeader,
+    });
     const ids = data.studies.map((s: any) => s.orthanc_study_id);
     const uniqueIds = new Set(ids);
     expect(uniqueIds.size).toBe(ids.length);
+  });
+
+  it("filters by description returns only matching studies", async () => {
+    if (!backendAvailable) return;
+    const allRes = await axios.get(`${BASE_URL}/api/v1/studies`, {
+      headers: authHeader,
+    });
+    const withDesc = allRes.data.studies.find((s: any) => s.study_description);
+    if (!withDesc) return;
+
+    const fragment = (withDesc.study_description as string).slice(0, 4);
+    const { data } = await axios.get(
+      `${BASE_URL}/api/v1/studies?description=${encodeURIComponent(fragment)}`,
+      { headers: authHeader },
+    );
+    expect(Array.isArray(data.studies)).toBe(true);
+    expect(data.studies.length).toBeGreaterThan(0);
+    data.studies.forEach((s: any) => {
+      expect((s.study_description ?? "").toLowerCase()).toContain(
+        fragment.toLowerCase(),
+      );
+    });
+  });
+
+  it("description filter with no match returns empty list, not 404", async () => {
+    if (!backendAvailable) return;
+    const { data, status } = await axios.get(
+      `${BASE_URL}/api/v1/studies?description=XXXXXXXXXXX_NO_MATCH_DESCRIPTION`,
+      { headers: authHeader },
+    );
+    expect(status).toBe(200);
+    expect(data.total).toBe(0);
+    expect(data.studies.length).toBe(0);
+  });
+
+  it("description filter combines with modality filter", async () => {
+    if (!backendAvailable) return;
+    const { data } = await axios.get(
+      `${BASE_URL}/api/v1/studies?modality=CT&description=XXXXXXXXXXX_NO_MATCH_DESCRIPTION`,
+      { headers: authHeader },
+    );
+    expect(data.total).toBe(0);
+    expect(data.studies.length).toBe(0);
   });
 });
 
@@ -154,13 +213,17 @@ describe("GET /api/v1/studies/:studyId/thumbnail", () => {
   it("returns 404 for unknown study", async () => {
     if (!backendAvailable) return;
     await expect(
-      axios.get(`${BASE_URL}/api/v1/studies/nonexistent-id/thumbnail`, { headers: authHeader }),
+      axios.get(`${BASE_URL}/api/v1/studies/nonexistent-id/thumbnail`, {
+        headers: authHeader,
+      }),
     ).rejects.toMatchObject({ response: { status: 404 } });
   });
 
   it("returns image content for a valid study", async () => {
     if (!backendAvailable) return;
-    const { data: list } = await axios.get(`${BASE_URL}/api/v1/studies`, { headers: authHeader });
+    const { data: list } = await axios.get(`${BASE_URL}/api/v1/studies`, {
+      headers: authHeader,
+    });
     if (list.studies.length === 0) return;
 
     const studyId: string = list.studies[0].orthanc_study_id;

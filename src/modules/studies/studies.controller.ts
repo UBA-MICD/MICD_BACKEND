@@ -75,6 +75,7 @@ export const listStudies: RequestHandler = async (req, res) => {
       dateTo: (req.query.date_to as string) || null,
       search: (req.query.search as string) || null,
       zenodoLinked: req.query.zenodo_linked === "true" ? true : null,
+      description: (req.query.description as string) || null,
     };
     const result = await studiesService.listStudies(
       page,
@@ -111,10 +112,13 @@ export const getStudyZenodo: RequestHandler = async (req, res) => {
 
 export const checkStudyZenodo: RequestHandler = async (req, res) => {
   try {
-    const result = await studiesService.checkStudyZenodoVersion(req.params.studyId, {
-      userId: Number(req.user!.sub),
-      ip: req.ip ?? "",
-    });
+    const result = await studiesService.checkStudyZenodoVersion(
+      req.params.studyId,
+      {
+        userId: Number(req.user!.sub),
+        ip: req.ip ?? "",
+      },
+    );
     res.json(result);
   } catch (err) {
     sendError(res, err);
