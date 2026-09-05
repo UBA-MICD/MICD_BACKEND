@@ -8,6 +8,7 @@ import { migration006 } from "./migrations/006_roles";
 import { migration007 } from "./migrations/007_user_invites";
 import { migration008 } from "./migrations/008_audit_append_only";
 import { migration009 } from "./migrations/009_study_description_index";
+import { migration010 } from "./migrations/010_validations";
 
 /**
  * A single migration statement. Either raw SQL (may contain several
@@ -40,6 +41,7 @@ const migrations: Migration[] = [
   migration007,
   migration008,
   migration009,
+  migration010,
 ];
 
 /** Apply every migration in order. Idempotent — safe to call on each boot. */

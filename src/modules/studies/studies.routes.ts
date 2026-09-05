@@ -4,6 +4,7 @@ import { auditStudyAccess } from "../../middleware/audit-access.middleware";
 import { AUDIT_ACTIONS } from "../../shared/audit";
 import { ROLES } from "../../shared/roles";
 import * as ctrl from "./studies.controller";
+import * as validationCtrl from "./validation.controller";
 
 /**
  * Study read routes. Registered with their full paths (mounted at root in
@@ -89,4 +90,16 @@ studiesRouter.get(
   ...READ,
   auditStudyAccess(AUDIT_ACTIONS.STUDY_VIEWED),
   ctrl.getStudyThumbnail,
+);
+
+// ── Diagnostic validation (US-26) ─────────────────────────────────────────────
+studiesRouter.post(
+  "/api/v1/studies/:studyId/validate",
+  ...STAFF,
+  validationCtrl.validateStudy,
+);
+studiesRouter.post(
+  "/api/v1/studies/:studyId/validation-correction",
+  ...ADMIN,
+  validationCtrl.correctStudyValidation,
 );
