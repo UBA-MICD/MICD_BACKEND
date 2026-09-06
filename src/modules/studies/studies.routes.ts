@@ -93,6 +93,11 @@ studiesRouter.get(
 );
 
 // ── Diagnostic validation (US-26) ─────────────────────────────────────────────
+studiesRouter.get(
+  "/api/v1/studies/:studyId/validation",
+  ...READ,
+  validationCtrl.getStudyValidation,
+);
 studiesRouter.post(
   "/api/v1/studies/:studyId/validate",
   ...STAFF,

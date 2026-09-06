@@ -237,3 +237,81 @@ describe("POST /api/v1/studies/:studyId/validation-correction", () => {
     ).rejects.toMatchObject({ response: { status: 400 } });
   });
 });
+
+// ── GET /api/v1/studies?validation_status= ────────────────────────────────────
+
+describe("GET /api/v1/studies?validation_status filter", () => {
+  beforeAll(async () => {
+    // Ensure the study has a known validation state (approved) before running filter tests
+    if (!backendAvailable || !existingStudyId) return;
+    await axios.post(
+      `${BASE_URL}/api/v1/studies/${existingStudyId}/validate`,
+      { action: "approved" },
+      { headers: staffHeader },
+    );
+  });
+
+  it("200 — returns only approved studies when validation_status=approved", async () => {
+    if (!backendAvailable) return;
+    const { status, data } = await axios.get(
+      `${BASE_URL}/api/v1/studies?validation_status=approved&limit=50`,
+      { headers: staffHeader },
+    );
+    expect(status).toBe(200);
+    expect(Array.isArray(data.studies)).toBe(true);
+    for (const study of data.studies) {
+      expect(study.validation_status).toBe("approved");
+    }
+  });
+
+  it("200 — approved study does NOT appear in validation_status=none results", async () => {
+    if (!backendAvailable || !existingStudyId) return;
+    const { data } = await axios.get(
+      `${BASE_URL}/api/v1/studies?validation_status=none&limit=100`,
+      { headers: staffHeader },
+    );
+    const found = data.studies.some(
+      (s: { orthanc_study_id: string }) =>
+        s.orthanc_study_id === existingStudyId,
+    );
+    expect(found).toBe(false);
+  });
+
+  it("200 — approved study appears in validation_status=approved results", async () => {
+    if (!backendAvailable || !existingStudyId) return;
+    const { data } = await axios.get(
+      `${BASE_URL}/api/v1/studies?validation_status=approved&limit=100`,
+      { headers: staffHeader },
+    );
+    const found = data.studies.some(
+      (s: { orthanc_study_id: string }) =>
+        s.orthanc_study_id === existingStudyId,
+    );
+    expect(found).toBe(true);
+  });
+
+  it("200 — no validation_status filter returns all studies", async () => {
+    if (!backendAvailable) return;
+    const [all, approved] = await Promise.all([
+      axios.get(`${BASE_URL}/api/v1/studies?limit=100`, {
+        headers: staffHeader,
+      }),
+      axios.get(
+        `${BASE_URL}/api/v1/studies?validation_status=approved&limit=100`,
+        {
+          headers: staffHeader,
+        },
+      ),
+    ]);
+    expect(all.data.total).toBeGreaterThanOrEqual(approved.data.total);
+  });
+
+  it("400 — invalid validation_status value returns 400", async () => {
+    if (!backendAvailable) return;
+    await expect(
+      axios.get(`${BASE_URL}/api/v1/studies?validation_status=invalid`, {
+        headers: staffHeader,
+      }),
+    ).rejects.toMatchObject({ response: { status: 400 } });
+  });
+});
