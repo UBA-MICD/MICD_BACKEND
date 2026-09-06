@@ -315,3 +315,43 @@ describe("GET /api/v1/studies?validation_status filter", () => {
     ).rejects.toMatchObject({ response: { status: 400 } });
   });
 });
+
+// ── GET /validation — role access ─────────────────────────────────────────────
+
+describe("GET /api/v1/studies/:studyId/validation — role access", () => {
+  it("200 — investigador can read the validation status (read is open to all roles)", async () => {
+    if (!backendAvailable || !existingStudyId) return;
+    const { status, data } = await axios.get(
+      `${BASE_URL}/api/v1/studies/${existingStudyId}/validation`,
+      { headers: investigadorHeader },
+    );
+    expect(status).toBe(200);
+    // May be null or a record — both are valid
+    expect(data === null || typeof data === "object").toBe(true);
+  });
+
+  it("200 — medico can read the validation status", async () => {
+    if (!backendAvailable || !existingStudyId) return;
+    const { status } = await axios.get(
+      `${BASE_URL}/api/v1/studies/${existingStudyId}/validation`,
+      { headers: staffHeader },
+    );
+    expect(status).toBe(200);
+  });
+
+  it("200 — admin can read the validation status", async () => {
+    if (!backendAvailable || !existingStudyId) return;
+    const { status } = await axios.get(
+      `${BASE_URL}/api/v1/studies/${existingStudyId}/validation`,
+      { headers: adminHeader },
+    );
+    expect(status).toBe(200);
+  });
+
+  it("401 — unauthenticated request is rejected", async () => {
+    if (!backendAvailable || !existingStudyId) return;
+    await expect(
+      axios.get(`${BASE_URL}/api/v1/studies/${existingStudyId}/validation`),
+    ).rejects.toMatchObject({ response: { status: 401 } });
+  });
+});
