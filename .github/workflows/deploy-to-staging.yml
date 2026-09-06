@@ -1,0 +1,138 @@
+name: Deploy to Staging
+
+# Chains off CI: runs only after the "CI Pipeline - Backend" workflow completes
+# successfully on the `staging` branch (i.e. a PR was merged into staging). A
+# single trigger means one merge = one CI run + one deploy, never a push-and-PR
+# double fire. See docs/staging-deployment/plan.md §4.
+on:
+  workflow_run:
+    workflows: ["CI Pipeline - Backend"]
+    types: [completed]
+    branches: [staging]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: true
+
+jobs:
+  build-push:
+    name: Build & push image (GitHub runner)
+    runs-on: ubuntu-latest
+    # Skip unless CI passed (or this was triggered manually).
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.meta.outputs.sha_tag }}
+    steps:
+      - name: Checkout the tested commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Compute lowercase image tags
+        id: meta
+        run: |
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          SHORT=$(git rev-parse --short HEAD)
+          echo "staging_tag=ghcr.io/${OWNER}/micd_backend:staging" >> "$GITHUB_OUTPUT"
+          echo "sha_tag=ghcr.io/${OWNER}/micd_backend:sha-${SHORT}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.staging
+          push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          tags: |
+            ${{ steps.meta.outputs.staging_tag }}
+            ${{ steps.meta.outputs.sha_tag }}
+
+  deploy:
+    name: Deploy to VPS (pull & run)
+    needs: build-push
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Copy compose file to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.STAGING_VPS_HOST }}
+          username: ${{ secrets.STAGING_VPS_USER }}
+          key: ${{ secrets.STAGING_VPS_KEYS }}
+          port: ${{ secrets.STAGING_VPS_PORT }}
+          source: docker-compose.staging.yml
+          target: ${{ secrets.STAGING_VPS_PATH }}/backend
+          strip_components: 0
+
+      - name: Pull image and (re)start the data plane
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+          BACKEND_IMAGE: ${{ needs.build-push.outputs.image }}
+          DEPLOY_PATH: ${{ secrets.STAGING_VPS_PATH }}/backend
+        with:
+          host: ${{ secrets.STAGING_VPS_HOST }}
+          username: ${{ secrets.STAGING_VPS_USER }}
+          key: ${{ secrets.STAGING_VPS_KEYS }}
+          port: ${{ secrets.STAGING_VPS_PORT }}
+          envs: GHCR_TOKEN,GHCR_USER,BACKEND_IMAGE,DEPLOY_PATH
+          script: |
+            set -euo pipefail
+            cd "$DEPLOY_PATH"
+
+            # Shared network the web edge also joins (idempotent).
+            docker network create micd 2>/dev/null || true
+
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+
+            # Deploy the exact SHA that passed CI (falls back to :staging default).
+            export BACKEND_IMAGE
+            docker compose -f docker-compose.staging.yml --env-file .env.staging pull
+            docker compose -f docker-compose.staging.yml --env-file .env.staging up -d --no-build
+
+            docker image prune -f
+
+      - name: Health check (/api/readyz, internal)
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          DEPLOY_PATH: ${{ secrets.STAGING_VPS_PATH }}/backend
+        with:
+          host: ${{ secrets.STAGING_VPS_HOST }}
+          username: ${{ secrets.STAGING_VPS_USER }}
+          key: ${{ secrets.STAGING_VPS_KEYS }}
+          port: ${{ secrets.STAGING_VPS_PORT }}
+          envs: DEPLOY_PATH
+          script: |
+            set -euo pipefail
+            cd "$DEPLOY_PATH"
+            for i in $(seq 1 12); do
+              if docker compose -f docker-compose.staging.yml exec -T backend \
+                   wget -qO- http://localhost:3000/api/readyz >/dev/null 2>&1; then
+                echo "Backend ready on attempt $i"
+                exit 0
+              fi
+              echo "Attempt $i/12 — waiting 5s..."
+              sleep 5
+            done
+            echo "Health check failed after 60s" >&2
+            docker compose -f docker-compose.staging.yml logs --tail=50 backend >&2 || true
+            exit 1
