@@ -8,8 +8,8 @@ This repo's staging artifacts:
 - `.env.staging.example` — copy to `.env.staging` **on the VPS** and fill in secrets.
 - `.github/workflows/deploy-to-staging.yml` — build+push to GHCR, then SSH deploy (pull & run).
 
-Full design and the cross-repo picture live in the workspace SDD spec set:
-`docs/staging-deployment/{spec,plan,tasks}.md` (in the parent workspace).
+Full design, the cross-repo picture, and the resume-from-another-computer routemap live in the
+SDD spec set in this repo: `docs/staging-deployment/{spec,plan,tasks,routemap}.md`.
 
 Quick facts:
 - Domain: `dicomviewermed.online` (TLS terminated at the web repo's Caddy edge).
