@@ -43,7 +43,9 @@ function gatedRouteCount(router: Router): number {
   let n = 0;
   for (const l of router.stack as any[]) {
     if (!l.route) continue;
-    const guarded = l.route.stack?.some((s: any) => Array.isArray(s.handle?.roles));
+    const guarded = l.route.stack?.some((s: any) =>
+      Array.isArray(s.handle?.roles),
+    );
     if (guarded) n += Object.keys(l.route.methods).length;
   }
   return n;
@@ -62,8 +64,18 @@ const studies: Expected[] = [
   },
   { method: "get", path: "/api/v1/studies", roles: ALL },
   { method: "get", path: "/api/v1/studies/:studyId/zenodo", roles: ALL },
-  { method: "post", path: "/api/v1/studies/:studyId/zenodo/check", roles: STAFF },
+  {
+    method: "post",
+    path: "/api/v1/studies/:studyId/zenodo/check",
+    roles: STAFF,
+  },
   { method: "get", path: "/api/v1/studies/:studyId/thumbnail", roles: ALL },
+  { method: "post", path: "/api/v1/studies/:studyId/validate", roles: STAFF },
+  {
+    method: "post",
+    path: "/api/v1/studies/:studyId/validation-correction",
+    roles: ADMIN,
+  },
 ];
 
 const upload: Expected[] = [
@@ -107,21 +119,18 @@ const suites: Array<[string, Router, Expected[]]> = [
 describe("RBAC route matrix", () => {
   for (const [name, router, expected] of suites) {
     describe(name, () => {
-      it.each(expected)(
-        "$method $path → $roles",
-        ({ method, path, roles }) => {
-          expect(guardRolesFor(router, method, path)).toEqual(roles);
-        },
-      );
+      it.each(expected)("$method $path → $roles", ({ method, path, roles }) => {
+        expect(guardRolesFor(router, method, path)).toEqual(roles);
+      });
 
-      it("gates exactly the expected number of routes (no ungated route)", () => {
+      it("gates exactly the expected number of routes (no unguarded route)", () => {
         expect(gatedRouteCount(router)).toBe(expected.length);
       });
     });
   }
 
-  it("gates 32 authenticated endpoints in total", () => {
+  it("gates 34 authenticated endpoints in total", () => {
     const total = suites.reduce((sum, [, r]) => sum + gatedRouteCount(r), 0);
-    expect(total).toBe(32);
+    expect(total).toBe(34);
   });
 });

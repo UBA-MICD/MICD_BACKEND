@@ -21,7 +21,6 @@ import {
   validateStudy,
   correctStudyValidation,
 } from "../../../src/modules/studies/validation.service";
-import { isHttpError } from "../../../src/shared/http-error";
 
 const mockValidationRepo = validationRepo as jest.Mocked<typeof validationRepo>;
 const mockStudiesRepo = studiesRepo as jest.Mocked<typeof studiesRepo>;
@@ -96,17 +95,13 @@ describe("validateStudy", () => {
   it("throws 400 when action is rejected and comment is missing", async () => {
     await expect(
       validateStudy(STUDY_ID, "rejected", undefined, USER_ID, IP),
-    ).rejects.toSatisfy(
-      (err: unknown) => isHttpError(err) && err.status === 400,
-    );
+    ).rejects.toMatchObject({ status: 400 });
   });
 
   it("throws 400 when action is rejected and comment is blank", async () => {
     await expect(
       validateStudy(STUDY_ID, "rejected", "   ", USER_ID, IP),
-    ).rejects.toSatisfy(
-      (err: unknown) => isHttpError(err) && err.status === 400,
-    );
+    ).rejects.toMatchObject({ status: 400 });
   });
 
   it("does NOT require a comment for approved action", async () => {
@@ -131,9 +126,7 @@ describe("validateStudy", () => {
 
     await expect(
       validateStudy("nonexistent", "approved", undefined, USER_ID, IP),
-    ).rejects.toSatisfy(
-      (err: unknown) => isHttpError(err) && err.status === 404,
-    );
+    ).rejects.toMatchObject({ status: 404 });
   });
 
   it("wraps unexpected DB errors as 500", async () => {
@@ -141,9 +134,7 @@ describe("validateStudy", () => {
 
     await expect(
       validateStudy(STUDY_ID, "approved", undefined, USER_ID, IP),
-    ).rejects.toSatisfy(
-      (err: unknown) => isHttpError(err) && err.status === 500,
-    );
+    ).rejects.toMatchObject({ status: 500 });
   });
 });
 
@@ -174,9 +165,7 @@ describe("correctStudyValidation", () => {
 
     await expect(
       correctStudyValidation(STUDY_ID, "approved", undefined, USER_ID, IP),
-    ).rejects.toSatisfy(
-      (err: unknown) => isHttpError(err) && err.status === 404,
-    );
+    ).rejects.toMatchObject({ status: 404 });
   });
 
   it("throws 400 when action is rejected and comment is missing", async () => {
@@ -184,9 +173,7 @@ describe("correctStudyValidation", () => {
 
     await expect(
       correctStudyValidation(STUDY_ID, "rejected", undefined, USER_ID, IP),
-    ).rejects.toSatisfy(
-      (err: unknown) => isHttpError(err) && err.status === 400,
-    );
+    ).rejects.toMatchObject({ status: 400 });
   });
 
   it("wraps unexpected DB errors as 500", async () => {
@@ -195,8 +182,6 @@ describe("correctStudyValidation", () => {
 
     await expect(
       correctStudyValidation(STUDY_ID, "approved", undefined, USER_ID, IP),
-    ).rejects.toSatisfy(
-      (err: unknown) => isHttpError(err) && err.status === 500,
-    );
+    ).rejects.toMatchObject({ status: 500 });
   });
 });
