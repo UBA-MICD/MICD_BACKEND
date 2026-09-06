@@ -33,6 +33,8 @@ export const AUDIT_ACTIONS = {
   // Diagnostic validation (US-26)
   STUDY_VALIDATED: "STUDY_VALIDATED",
   STUDY_VALIDATION_CORRECTED: "STUDY_VALIDATION_CORRECTED",
+  // ML prediction (US-ML)
+  STUDY_ML_ANALYSIS_STARTED: "STUDY_ML_ANALYSIS_STARTED",
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
