@@ -2,13 +2,27 @@ name: CI Pipeline - Backend
 
 on:
   push:
-    branches: [ dev ]
+    branches: [ dev, staging ]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
   pull_request:
-    branches: [ main, dev ]
+    branches: [ main, dev, staging ]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+
+# Cancel superseded runs on the same branch/PR so nothing runs twice.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    # Skip draft PRs; still run on every push.
+    if: github.event.pull_request.draft == false || github.event_name == 'push'
 
     services:
       postgres:

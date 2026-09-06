@@ -1,0 +1,52 @@
+# Staging image — same hardened runtime as the production Dockerfile's `runtime`
+# target, kept as its own file so the staging pipeline builds a predictable
+# artifact independently of any future prod-only changes. Built on GitHub
+# runners and pushed to GHCR; the 4 GB VPS only ever pulls this image, it never
+# builds (see docs/staging-deployment/plan.md §4).
+#
+# Pinned by digest for reproducible builds; override with --build-arg to bump.
+ARG NODE_IMAGE=node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293
+
+# ── Stage 1: Builder ──────────────────────────────────────────────────────────
+FROM ${NODE_IMAGE} AS builder
+
+WORKDIR /app
+
+COPY package*.json ./
+# --include=dev is explicit: this stage needs typescript to compile. See the
+# note in Dockerfile for why a bare `npm ci` can drop devDependencies.
+RUN npm ci --include=dev
+
+COPY tsconfig.json ./
+COPY src/ ./src/
+RUN npm run build
+
+# ── Stage 2: Runtime ──────────────────────────────────────────────────────────
+FROM ${NODE_IMAGE} AS runtime
+
+WORKDIR /app
+
+# tini as PID 1: reaps zombies and forwards signals (SIGTERM from `docker stop`)
+# correctly, which plain `node` as PID 1 does not.
+RUN apk add --no-cache tini
+
+COPY package*.json ./
+RUN npm ci --omit=dev
+
+COPY --from=builder /app/dist ./dist
+
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+USER appuser
+
+ENV NODE_ENV=production
+ENV PORT=3000
+
+EXPOSE 3000
+
+# Liveness only (no dependency I/O) — matches GET /api/livez. TLS is terminated
+# at the Caddy edge, so this always probes plain http on localhost.
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=5 \
+  CMD wget -qO- "http://localhost:${PORT}/api/livez" || exit 1
+
+ENTRYPOINT ["/sbin/tini", "--"]
+CMD ["node", "dist/server.js"]
