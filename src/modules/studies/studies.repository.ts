@@ -7,10 +7,12 @@ export interface StudyFilters {
   dateTo: string | null;
   search: string | null;
   zenodoLinked: boolean | null;
+  description: string | null;
 }
 
 // Shared WHERE clause for the paginated listing — parameterized so both the
 // COUNT and the page query use identical filter semantics.
+// $1 modality, $2 dateFrom, $3 dateTo, $4 patient search, $5 zenodoLinked, $6 description
 const FILTER_WHERE = `
   ($1::text IS NULL OR modality = $1)
   AND ($2::text IS NULL OR study_date >= $2)
@@ -20,10 +22,18 @@ const FILTER_WHERE = `
     OR patient_name ILIKE '%' || $4 || '%'
     OR patient_id   ILIKE '%' || $4 || '%'
   )
-  AND ($5::bool IS NULL OR ($5 = true AND (zenodo_doi IS NOT NULL OR zenodo_source_doi IS NOT NULL)))`;
+  AND ($5::bool IS NULL OR ($5 = true AND (zenodo_doi IS NOT NULL OR zenodo_source_doi IS NOT NULL)))
+  AND ($6::text IS NULL OR study_description ILIKE '%' || $6 || '%')`;
 
 function filterArgs(f: StudyFilters): (string | boolean | null)[] {
-  return [f.modality, f.dateFrom, f.dateTo, f.search, f.zenodoLinked];
+  return [
+    f.modality,
+    f.dateFrom,
+    f.dateTo,
+    f.search,
+    f.zenodoLinked,
+    f.description,
+  ];
 }
 
 /** The first stored instance id for a study, in insertion order, or null. */
@@ -122,7 +132,12 @@ export async function findStudyZenodoMeta(
   // GROUP BY is absent — aggregate over all instances of the study. If the
   // study doesn't exist at all, the aggregate returns one row with all NULLs.
   const row = rows[0];
-  if (!row || (row.zenodo_doi === null && row.zenodo_source_doi === null && row.patient_name === null)) {
+  if (
+    !row ||
+    (row.zenodo_doi === null &&
+      row.zenodo_source_doi === null &&
+      row.patient_name === null)
+  ) {
     return null;
   }
   return row;
@@ -137,27 +152,38 @@ export async function findStudies(
   const { rows } = await pool.query<Record<string, any>>(
     `
     SELECT
-      MIN(id)                  AS id,
-      orthanc_study_id,
-      MIN(orthanc_instance_id) AS orthanc_instance_id,
-      MAX(patient_name)        AS patient_name,
-      MAX(patient_id)          AS patient_id,
-      MAX(study_date)          AS study_date,
-      MAX(modality)            AS modality,
-      MAX(study_description)   AS study_description,
-      MAX(uploaded_at)         AS uploaded_at,
-      COUNT(*)                 AS num_instances,
-      MAX(zenodo_doi)          AS zenodo_doi,
-      MAX(zenodo_published_at) AS zenodo_published_at,
-      MAX(zenodo_source_record_id) AS zenodo_source_record_id,
-      MAX(zenodo_source_doi)   AS zenodo_source_doi,
-      MAX(zenodo_imported_at)  AS zenodo_imported_at,
-      BOOL_OR(zenodo_new_version_available) AS zenodo_new_version_available
-    FROM studies
+      MIN(s.id)                    AS id,
+      s.orthanc_study_id,
+      MIN(s.orthanc_instance_id)   AS orthanc_instance_id,
+      MAX(s.patient_name)          AS patient_name,
+      MAX(s.patient_id)            AS patient_id,
+      MAX(s.study_date)            AS study_date,
+      MAX(s.modality)              AS modality,
+      MAX(s.study_description)     AS study_description,
+      MAX(s.uploaded_at)           AS uploaded_at,
+      COUNT(*)                     AS num_instances,
+      MAX(s.zenodo_doi)            AS zenodo_doi,
+      MAX(s.zenodo_published_at)   AS zenodo_published_at,
+      MAX(s.zenodo_source_record_id) AS zenodo_source_record_id,
+      MAX(s.zenodo_source_doi)     AS zenodo_source_doi,
+      MAX(s.zenodo_imported_at)    AS zenodo_imported_at,
+      BOOL_OR(s.zenodo_new_version_available) AS zenodo_new_version_available,
+      v.action                     AS validation_status,
+      u.email                      AS validated_by,
+      v.created_at                 AS validated_at
+    FROM studies s
+    LEFT JOIN LATERAL (
+      SELECT action, user_id, created_at
+      FROM study_validations
+      WHERE study_id = s.orthanc_study_id
+      ORDER BY created_at DESC
+      LIMIT 1
+    ) v ON true
+    LEFT JOIN users u ON u.id = v.user_id
     WHERE ${FILTER_WHERE}
-    GROUP BY orthanc_study_id
-    ORDER BY MAX(uploaded_at) DESC
-    LIMIT $6 OFFSET $7
+    GROUP BY s.orthanc_study_id, v.action, u.email, v.created_at
+    ORDER BY MAX(s.uploaded_at) DESC
+    LIMIT $7 OFFSET $8
   `,
     [...filterArgs(filters), limit, offset],
   );
