@@ -5,6 +5,7 @@ import { AUDIT_ACTIONS } from "../../shared/audit";
 import { ROLES } from "../../shared/roles";
 import * as ctrl from "./studies.controller";
 import * as validationCtrl from "./validation.controller";
+import * as mlCtrl from "./ml.controller";
 
 /**
  * Study read routes. Registered with their full paths (mounted at root in
@@ -93,6 +94,11 @@ studiesRouter.get(
 );
 
 // ── Diagnostic validation (US-26) ─────────────────────────────────────────────
+studiesRouter.get(
+  "/api/v1/studies/:studyId/validation",
+  ...READ,
+  validationCtrl.getStudyValidation,
+);
 studiesRouter.post(
   "/api/v1/studies/:studyId/validate",
   ...STAFF,
@@ -102,4 +108,16 @@ studiesRouter.post(
   "/api/v1/studies/:studyId/validation-correction",
   ...ADMIN,
   validationCtrl.correctStudyValidation,
+);
+
+// ── ML prediction (US-ML) ─────────────────────────────────────────────────────
+studiesRouter.post(
+  "/api/v1/studies/:studyId/ml/analyze",
+  ...ADMIN,
+  mlCtrl.analyzeStudy,
+);
+studiesRouter.get(
+  "/api/v1/studies/:studyId/ml/prediction",
+  ...READ,
+  mlCtrl.getStudyPrediction,
 );

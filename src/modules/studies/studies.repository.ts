@@ -1,6 +1,9 @@
 import { pool } from "../../db/pool";
 import { InstanceRow } from "../../shared/instances-util";
 
+export type ValidationStatusFilter =
+  "approved" | "rejected" | "review" | "none" | null;
+
 export interface StudyFilters {
   modality: string | null;
   dateFrom: string | null;
@@ -8,11 +11,13 @@ export interface StudyFilters {
   search: string | null;
   zenodoLinked: boolean | null;
   description: string | null;
+  validationStatus: ValidationStatusFilter;
 }
 
 // Shared WHERE clause for the paginated listing — parameterized so both the
 // COUNT and the page query use identical filter semantics.
-// $1 modality, $2 dateFrom, $3 dateTo, $4 patient search, $5 zenodoLinked, $6 description
+// $1 modality, $2 dateFrom, $3 dateTo, $4 patient search, $5 zenodoLinked,
+// $6 description, $7 validationStatus ("none" = never validated, null = no filter)
 const FILTER_WHERE = `
   ($1::text IS NULL OR modality = $1)
   AND ($2::text IS NULL OR study_date >= $2)
@@ -23,7 +28,18 @@ const FILTER_WHERE = `
     OR patient_id   ILIKE '%' || $4 || '%'
   )
   AND ($5::bool IS NULL OR ($5 = true AND (zenodo_doi IS NOT NULL OR zenodo_source_doi IS NOT NULL)))
-  AND ($6::text IS NULL OR study_description ILIKE '%' || $6 || '%')`;
+  AND ($6::text IS NULL OR study_description ILIKE '%' || $6 || '%')
+  AND (
+    $7::text IS NULL
+    OR ($7 = 'none' AND NOT EXISTS (
+      SELECT 1 FROM study_validations WHERE study_id = orthanc_study_id
+    ))
+    OR ($7 != 'none' AND (
+      SELECT action FROM study_validations
+      WHERE study_id = orthanc_study_id
+      ORDER BY created_at DESC LIMIT 1
+    ) = $7)
+  )`;
 
 function filterArgs(f: StudyFilters): (string | boolean | null)[] {
   return [
@@ -33,6 +49,7 @@ function filterArgs(f: StudyFilters): (string | boolean | null)[] {
     f.search,
     f.zenodoLinked,
     f.description,
+    f.validationStatus,
   ];
 }
 
@@ -74,9 +91,9 @@ export async function countStudies(filters: StudyFilters): Promise<number> {
     `
     SELECT COUNT(*) AS total
     FROM (
-      SELECT orthanc_study_id FROM studies
+      SELECT s.orthanc_study_id FROM studies s
       WHERE ${FILTER_WHERE}
-      GROUP BY orthanc_study_id
+      GROUP BY s.orthanc_study_id
     ) sub
   `,
     filterArgs(filters),
@@ -183,7 +200,7 @@ export async function findStudies(
     WHERE ${FILTER_WHERE}
     GROUP BY s.orthanc_study_id, v.action, u.email, v.created_at
     ORDER BY MAX(s.uploaded_at) DESC
-    LIMIT $7 OFFSET $8
+    LIMIT $8 OFFSET $9
   `,
     [...filterArgs(filters), limit, offset],
   );
