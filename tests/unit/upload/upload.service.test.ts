@@ -52,6 +52,8 @@ const SAMPLE_TAGS = {
   "0020,0013": { Value: [1] }, // Instance Number
   "0028,0010": { Value: [512] }, // Rows
   "0028,0011": { Value: [512] }, // Cols
+  "0008,103e": { Value: "Axial Brain" }, // Series Description (TK-12)
+  "0020,1208": { Value: [200] }, // Number of Study Related Images (TK-12)
 };
 
 const STUDY_ROW = {
@@ -273,5 +275,56 @@ describe("uploadDicom — duplicate handling", () => {
     // postInstance is already set to return Status=Success in beforeEach
     await uploadDicom(SMALL_FILE, false);
     expect(mockRepo.deleteBySopInstanceUid).not.toHaveBeenCalled();
+  });
+});
+
+// ── TK-12: series_description + number_of_images extraction ──────────────────
+
+describe("uploadDicom — TK-12 metadata (series_description, number_of_images)", () => {
+  it("forwards seriesDescription and numberOfImages to upsertStudy", async () => {
+    await uploadDicom(SMALL_FILE, false);
+
+    expect(mockRepo.upsertStudy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        seriesDescription: "Axial Brain",
+        numberOfImages: 200,
+      }),
+    );
+  });
+
+  it("stores seriesDescription as empty string when tag 0008,103e is absent", async () => {
+    const tagsWithout = { ...SAMPLE_TAGS } as any;
+    delete tagsWithout["0008,103e"];
+    orthancClient.getInstanceTags.mockResolvedValue({ data: tagsWithout });
+
+    await uploadDicom(SMALL_FILE, false);
+
+    expect(mockRepo.upsertStudy).toHaveBeenCalledWith(
+      expect.objectContaining({ seriesDescription: "" }),
+    );
+  });
+
+  it("stores numberOfImages as null when tag 0020,1208 is absent", async () => {
+    const tagsWithout = { ...SAMPLE_TAGS } as any;
+    delete tagsWithout["0020,1208"];
+    orthancClient.getInstanceTags.mockResolvedValue({ data: tagsWithout });
+
+    await uploadDicom(SMALL_FILE, false);
+
+    expect(mockRepo.upsertStudy).toHaveBeenCalledWith(
+      expect.objectContaining({ numberOfImages: null }),
+    );
+  });
+
+  it("stores both as empty/null when Orthanc tag endpoint fails", async () => {
+    orthancClient.getInstanceTags.mockRejectedValue(
+      new Error("tags unavailable"),
+    );
+
+    await uploadDicom(SMALL_FILE, false);
+
+    expect(mockRepo.upsertStudy).toHaveBeenCalledWith(
+      expect.objectContaining({ seriesDescription: "", numberOfImages: null }),
+    );
   });
 });
