@@ -137,6 +137,7 @@ Puntos clave:
 - **HTTPS opcional en el propio backend:** con `TLS_ENABLED=true` (y `TLS_CERT_PATH`/`TLS_KEY_PATH`/`TLS_CERTS_DIR` configurados), Express sirve HTTPS directamente — sin depender de un proxy reverso delante. Por default queda en HTTP plano.
 - **Liveness vs readiness:** `GET /api/livez` (sin dependencias, señal de reinicio) y `GET /api/readyz` (Postgres + Orthanc alcanzables, señal de "listo para tráfico") — `GET /api/health` se mantiene como alias de `/api/readyz` por compatibilidad.
 - **Recursos y logs configurables** vía `POSTGRES_CPU_LIMIT`/`POSTGRES_MEM_LIMIT`, `ORTHANC_CPU_LIMIT`/`ORTHANC_MEM_LIMIT`, `BACKEND_CPU_LIMIT`/`BACKEND_MEM_LIMIT`, `LOG_MAX_SIZE`/`LOG_MAX_FILES` — ver `.env.prod.example`.
+- **Roles y gestión de usuarios (US-21 / US-H04):** `ADMIN_EMAIL`/`ADMIN_PASSWORD` siembran el primer admin en la migración 006 (solo si ambos están seteados; el hash se genera en la base). El flujo de invitación usa `APP_BASE_URL` para armar el link y `SMTP_*` para enviar el correo — con `SMTP_HOST` vacío el link se escribe en el log en vez de enviarse (útil en dev/CI). Ver [`docs/rbac.md`](./docs/rbac.md) y [`docs/user-management.md`](./docs/user-management.md).
 
 ---
 

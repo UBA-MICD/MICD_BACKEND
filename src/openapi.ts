@@ -591,6 +591,21 @@ export const openapiSpec = {
           "POST /auth/refresh)",
       },
     },
+    responses: {
+      // Shared 403 for role-gated endpoints. A missing/invalid role claim
+      // answers 401 (so the client refreshes); an authenticated user with the
+      // wrong role gets this 403. See backend/docs/rbac.md for the full matrix.
+      Forbidden: {
+        description:
+          "Authenticated but the user's role is not permitted for this endpoint.",
+        content: {
+          "application/json": {
+            schema: { $ref: "#/components/schemas/Error" },
+            example: { error: "Forbidden", detail: "Requires role: admin" },
+          },
+        },
+      },
+    },
     schemas: {
       Error: {
         type: "object",
@@ -605,6 +620,11 @@ export const openapiSpec = {
         properties: {
           id: { type: "integer" },
           email: { type: "string", format: "email" },
+          role: {
+            type: "string",
+            enum: ["admin", "medico", "investigador"],
+            description: "RBAC role driving per-endpoint authorization.",
+          },
         },
       },
       TokenPair: {

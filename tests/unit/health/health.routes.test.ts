@@ -1,5 +1,8 @@
 import { healthRouter } from "../../../src/modules/health/health.routes";
-import { livezHandler, readyzHandler } from "../../../src/modules/health/health.controller";
+import {
+  livezHandler,
+  readyzHandler,
+} from "../../../src/modules/health/health.controller";
 
 /**
  * Router-stack introspection instead of supertest: this repo's unit tests call
@@ -26,6 +29,11 @@ describe("healthRouter", () => {
 
   it("does not expose any other routes", () => {
     const paths = healthRouter.stack.map((l: any) => l.route?.path).sort();
-    expect(paths).toEqual(["/health", "/livez", "/readyz"]);
+    expect(paths).toEqual([
+      "/health",
+      "/livez",
+      "/readyz",
+      "/v1/orthanc/statistics",
+    ]);
   });
 });

@@ -23,6 +23,8 @@ const ENV_KEYS = [
   "TLS_ENABLED",
   "TLS_CERT_PATH",
   "TLS_KEY_PATH",
+  "TRUST_PROXY",
+  "HOST",
 ] as const;
 
 type EnvOverrides = Partial<Record<(typeof ENV_KEYS)[number], string>>;
@@ -45,7 +47,11 @@ afterEach(() => {
 describe("config/env — defaults", () => {
   it("uses documented defaults when no env vars are set", () => {
     const env = loadEnv();
-    expect(env.serverConfig).toEqual({ port: 3000 });
+    expect(env.serverConfig).toEqual({
+      port: 3000,
+      host: undefined,
+      trustProxy: 1,
+    });
     expect(env.dbConfig).toEqual({
       host: "postgres",
       port: 5432,
@@ -245,5 +251,56 @@ describe("config/env — TLS", () => {
       certPath: "/certs/tls.crt",
       keyPath: "/certs/tls.key",
     });
+  });
+});
+
+/**
+ * TRUST_PROXY decides how many forwarding hops may set X-Forwarded-For, and the
+ * login rate limiter keys on the req.ip that results — every trusted hop is one
+ * a client can forge past. It has to be 0 wherever the API is reached directly,
+ * which is the desktop app's case.
+ */
+describe("config/env — trust proxy", () => {
+  it("trusts a single hop by default, matching the nginx deployment", () => {
+    expect(loadEnv().serverConfig.trustProxy).toBe(1);
+  });
+
+  it.each(["0", "false", "FALSE"])(
+    "disables proxy trust entirely for TRUST_PROXY=%j",
+    (value) => {
+      expect(loadEnv({ TRUST_PROXY: value }).serverConfig.trustProxy).toBe(false);
+    },
+  );
+
+  it("accepts an explicit hop count", () => {
+    expect(loadEnv({ TRUST_PROXY: "2" }).serverConfig.trustProxy).toBe(2);
+  });
+
+  it("falls back to one hop for an unparseable value", () => {
+    expect(loadEnv({ TRUST_PROXY: "yes" }).serverConfig.trustProxy).toBe(1);
+    expect(loadEnv({ TRUST_PROXY: "-3" }).serverConfig.trustProxy).toBe(1);
+  });
+});
+
+/**
+ * HOST is the interface the API binds to. The default publishes on all
+ * interfaces, which is what the Docker deployment needs; a desktop install
+ * bundling its own backend should bind loopback so the local API is not exposed
+ * to whatever network the machine is on.
+ */
+describe("config/env — bind address", () => {
+  it("leaves the bind address to Node by default", () => {
+    // Not "0.0.0.0": with no host Node binds dual-stack, while an explicit
+    // 0.0.0.0 is IPv4-only and refuses ::1 — which is what `localhost`
+    // resolves to first, breaking container healthchecks.
+    expect(loadEnv().serverConfig.host).toBeUndefined();
+  });
+
+  it("treats an empty HOST as unset rather than as a bind address", () => {
+    expect(loadEnv({ HOST: "" }).serverConfig.host).toBeUndefined();
+  });
+
+  it("binds loopback when HOST is set to it", () => {
+    expect(loadEnv({ HOST: "127.0.0.1" }).serverConfig.host).toBe("127.0.0.1");
   });
 });
