@@ -125,7 +125,7 @@ jobs:
             set -euo pipefail
             cd "$DEPLOY_PATH"
             for i in $(seq 1 12); do
-              if docker compose -f docker-compose.staging.yml exec -T backend \
+              if docker compose -f docker-compose.staging.yml --env-file .env.staging exec -T backend \
                    wget -qO- http://localhost:3000/api/readyz >/dev/null 2>&1; then
                 echo "Backend ready on attempt $i"
                 exit 0
