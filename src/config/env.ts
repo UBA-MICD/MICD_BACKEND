@@ -177,6 +177,7 @@ export const rateLimitConfig = {
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS ?? String(15 * 60 * 1000), 10),
   loginMax: parseInt(process.env.RATE_LIMIT_LOGIN_MAX ?? "5", 10),
   refreshMax: parseInt(process.env.RATE_LIMIT_REFRESH_MAX ?? "60", 10),
+  inviteMax: parseInt(process.env.RATE_LIMIT_INVITE_MAX ?? "20", 10),
   uploadMax: parseInt(process.env.RATE_LIMIT_UPLOAD_MAX ?? "1000", 10),
   globalMax: parseInt(process.env.RATE_LIMIT_GLOBAL_MAX ?? "3000", 10),
 };
