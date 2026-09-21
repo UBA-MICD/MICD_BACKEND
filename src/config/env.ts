@@ -174,7 +174,10 @@ export const adminSeed = {
  * stays tight because credential stuffing is the actual threat on that route.
  */
 export const rateLimitConfig = {
-  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS ?? String(15 * 60 * 1000), 10),
+  windowMs: parseInt(
+    process.env.RATE_LIMIT_WINDOW_MS ?? String(15 * 60 * 1000),
+    10,
+  ),
   loginMax: parseInt(process.env.RATE_LIMIT_LOGIN_MAX ?? "5", 10),
   refreshMax: parseInt(process.env.RATE_LIMIT_REFRESH_MAX ?? "60", 10),
   uploadMax: parseInt(process.env.RATE_LIMIT_UPLOAD_MAX ?? "1000", 10),
@@ -189,6 +192,27 @@ export const uploadConfig = {
     process.env.MAX_UPLOAD_BYTES ?? String(500 * 1024 * 1024),
     10,
   ),
+};
+
+// ── Anonymizer microservice (US-16) ──────────────────────────────────────────
+// The DICOM anonymizer built by the electronics team runs as its own Python
+// (FastAPI) container on the shared `micd` Docker network; the backend is the
+// only thing that talks to it (see clients/anonymizer.client.ts). Only the URL
+// changes between deployments — a Docker service name here, a locally-launched
+// port elsewhere — so the integration stays config-only.
+//
+// `enabled` is a fail-closed switch, NOT a bypass: turning it off does not let
+// un-anonymized DICOM through — the upload path refuses to store anything while
+// the anonymizer is disabled/unreachable (see anonymization.service.ts).
+export const anonymizerConfig = {
+  url: process.env.ANONYMIZER_URL ?? "http://anonimizador:8000",
+  // The /anonymize/ and /bulk_anonymize/ endpoints require a `profile` form
+  // field; the module's own tests exercise "default".
+  profile: process.env.ANONYMIZER_PROFILE ?? "default",
+  // Generous by default: large studies can take a while to anonymize, and a
+  // timeout is a fail-closed rejection, not a partial store.
+  timeoutMs: parseInt(process.env.ANONYMIZER_TIMEOUT_MS ?? String(120_000), 10),
+  enabled: process.env.ANONYMIZER_ENABLED !== "false",
 };
 
 // ── Zenodo (ZEN-01) ──────────────────────────────────────────────────────────
@@ -219,7 +243,6 @@ export const zenodoQuota = {
     return parseInt(process.env.ZENODO_QUOTA_LIMIT_GB ?? "50", 10);
   },
 };
-
 
 export const orthancStorageConfig = {
   get maxMb(): number | null {
