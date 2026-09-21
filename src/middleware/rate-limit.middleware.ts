@@ -32,7 +32,7 @@ export const loginRateLimiter = rateLimit({
  */
 export const inviteRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 20,
+  limit: rateLimitConfig.inviteMax,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many attempts. Try again later." },
