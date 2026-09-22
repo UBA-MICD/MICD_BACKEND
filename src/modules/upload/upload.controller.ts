@@ -2,6 +2,7 @@ import { RequestHandler } from "express";
 import { sendError } from "../../shared/http-error";
 import { logAction, AUDIT_ACTIONS } from "../../shared/audit";
 import { uploadDicom } from "./upload.service";
+import { parseClassificationId } from "./classification";
 
 /** POST handler for DICOM ingest (shared by the v1 and legacy upload routes). */
 export const uploadStudy: RequestHandler = async (req, res) => {
@@ -13,9 +14,11 @@ export const uploadStudy: RequestHandler = async (req, res) => {
   }
 
   try {
+    const classificationId = parseClassificationId(req.body?.classification_id);
     const result = await uploadDicom(
       { buffer: req.file.buffer, size: req.file.size },
       req.query.force === "true",
+      classificationId,
     );
     // Resource id is only known once Orthanc/Postgres assign it, so the
     // audit write happens here rather than via param-based middleware (TK-06).

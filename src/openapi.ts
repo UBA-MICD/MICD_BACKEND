@@ -51,6 +51,12 @@ const uploadRequestBody = {
             format: "binary",
             description: "DICOM file (max 500 MB)",
           },
+          classification_id: {
+            type: "integer",
+            nullable: true,
+            description:
+              "Optional pathology category id (from GET /api/v1/pathologies)",
+          },
         },
       },
     },
@@ -96,6 +102,7 @@ export const openapiSpec = {
     { name: "auth", description: "JWT login, token refresh and logout" },
     { name: "health", description: "Service health" },
     { name: "studies", description: "Studies indexed in PostgreSQL (v1)" },
+    { name: "pathologies", description: "Pathology classification catalog" },
     { name: "orthanc", description: "Thin proxy over the Orthanc REST API" },
     { name: "legacy", description: "Deprecated endpoints kept for the old app" },
   ],
@@ -368,6 +375,32 @@ export const openapiSpec = {
             content: {
               "application/json": {
                 schema: { $ref: "#/components/schemas/StudyPage" },
+              },
+            },
+          },
+          "401": unauthorized,
+          "500": errorResponse("Database error"),
+        },
+      },
+    },
+
+    "/api/v1/pathologies": {
+      get: {
+        tags: ["pathologies"],
+        summary: "List the pathology catalog",
+        description:
+          "The categories a study can be classified into ({ id, key }). " +
+          "Human labels live in the client, keyed by `key`.",
+        security: bearerSecurity,
+        responses: {
+          "200": {
+            description: "The pathology catalog",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/Pathology" },
+                },
               },
             },
           },
@@ -660,6 +693,14 @@ export const openapiSpec = {
           existingStudyId: { type: "string" },
         },
       },
+      Pathology: {
+        type: "object",
+        description: "A pathology category (the human label lives in the client)",
+        properties: {
+          id: { type: "integer" },
+          key: { type: "string", example: "acv" },
+        },
+      },
       Study: {
         type: "object",
         description:
@@ -677,6 +718,16 @@ export const openapiSpec = {
           num_instances: {
             type: "string",
             description: "Instance count (returned as string by COUNT(*))",
+          },
+          classification_id: {
+            type: "integer",
+            nullable: true,
+            description: "Pathology category id, or null if unclassified",
+          },
+          classification_key: {
+            type: "string",
+            nullable: true,
+            description: "Pathology category key (for client label lookup), or null",
           },
         },
       },
