@@ -41,7 +41,7 @@ export interface UploadResult {
 export async function uploadDicom(
   file: { buffer: Buffer; size: number },
   force: boolean,
-  classificationId: number | null,
+  classificationId: number | null = null,
 ): Promise<UploadResult> {
   // 413 — file too large
   if (file.size > MAX_FILE_SIZE) {
