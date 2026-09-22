@@ -14,20 +14,8 @@ jest.mock("../../../src/clients/orthanc.client", () => ({
 
 jest.mock("../../../src/modules/upload/upload.repository");
 
-// The anonymization layer is unit-tested on its own (anonymization.service /
-// validator / client). Here it is mocked so the ingestion flow can be tested in
-// isolation — the key invariant is that uploadDicom stores the buffer the
-// anonymizer returned, never the original.
-jest.mock("../../../src/modules/upload/anonymization.service", () => ({
-  anonymizeOne: jest.fn(),
-  anonymizeMany: jest.fn(),
-  ensureAnonymizerAvailable: jest.fn(),
-}));
-jest.mock("../../../src/modules/upload/anonymization.repository");
-
 import * as repo from "../../../src/modules/upload/upload.repository";
 import { uploadDicom } from "../../../src/modules/upload/upload.service";
-import { anonymizeOne } from "../../../src/modules/upload/anonymization.service";
 import { isHttpError } from "../../../src/shared/http-error";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -35,17 +23,11 @@ const { orthancClient } = jest.requireMock(
   "../../../src/clients/orthanc.client",
 ) as any;
 const mockRepo = repo as jest.Mocked<typeof repo>;
-const mockAnonymizeOne = anonymizeOne as jest.MockedFunction<
-  typeof anonymizeOne
->;
 
 // ── fixtures ──────────────────────────────────────────────────────────────────
 
 const SMALL_BUFFER = Buffer.alloc(100, 0);
 const SMALL_FILE = { buffer: SMALL_BUFFER, size: 100 };
-// What the (mocked) anonymizer returns — distinct bytes so tests can assert
-// that THIS, not the original SMALL_BUFFER, is what reaches Orthanc.
-const ANON_BUFFER = Buffer.alloc(100, 1);
 
 const ORTHANC_SUCCESS_RESPONSE = {
   ID: "inst-abc",
@@ -84,11 +66,6 @@ const STUDY_ROW = {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockAnonymizeOne.mockResolvedValue({
-    name: "study.dcm",
-    status: "exitoso",
-    buffer: ANON_BUFFER,
-  });
   orthancClient.postInstance.mockResolvedValue({
     data: ORTHANC_SUCCESS_RESPONSE,
   });
@@ -130,28 +107,9 @@ describe("uploadDicom — file validation", () => {
 // ── Orthanc interaction ───────────────────────────────────────────────────────
 
 describe("uploadDicom — Orthanc upload", () => {
-  it("posts the ANONYMIZED buffer to Orthanc, never the original", async () => {
+  it("posts the received buffer to Orthanc (anonymization is client-side)", async () => {
     await uploadDicom(SMALL_FILE, false);
-    expect(orthancClient.postInstance).toHaveBeenCalledWith(ANON_BUFFER);
-    expect(orthancClient.postInstance).not.toHaveBeenCalledWith(SMALL_BUFFER);
-  });
-
-  it("rejects with 422 and never touches Orthanc when anonymization fails", async () => {
-    mockAnonymizeOne.mockResolvedValue({
-      name: "study.dcm",
-      status: "fallido",
-      error: "Tags sin anonimizar: PatientName",
-    });
-
-    let caught: unknown;
-    try {
-      await uploadDicom(SMALL_FILE, false);
-    } catch (err) {
-      caught = err;
-    }
-    expect(isHttpError(caught)).toBe(true);
-    expect((caught as { status: number }).status).toBe(422);
-    expect(orthancClient.postInstance).not.toHaveBeenCalled();
+    expect(orthancClient.postInstance).toHaveBeenCalledWith(SMALL_BUFFER);
   });
 
   it("throws 400 when Orthanc rejects the file as invalid DICOM", async () => {

@@ -194,27 +194,6 @@ export const uploadConfig = {
   ),
 };
 
-// ── Anonymizer microservice (US-16) ──────────────────────────────────────────
-// The DICOM anonymizer built by the electronics team runs as its own Python
-// (FastAPI) container on the shared `micd` Docker network; the backend is the
-// only thing that talks to it (see clients/anonymizer.client.ts). Only the URL
-// changes between deployments — a Docker service name here, a locally-launched
-// port elsewhere — so the integration stays config-only.
-//
-// `enabled` is a fail-closed switch, NOT a bypass: turning it off does not let
-// un-anonymized DICOM through — the upload path refuses to store anything while
-// the anonymizer is disabled/unreachable (see anonymization.service.ts).
-export const anonymizerConfig = {
-  url: process.env.ANONYMIZER_URL ?? "http://anonimizador:8000",
-  // The /anonymize/ and /bulk_anonymize/ endpoints require a `profile` form
-  // field; the module's own tests exercise "default".
-  profile: process.env.ANONYMIZER_PROFILE ?? "default",
-  // Generous by default: large studies can take a while to anonymize, and a
-  // timeout is a fail-closed rejection, not a partial store.
-  timeoutMs: parseInt(process.env.ANONYMIZER_TIMEOUT_MS ?? String(120_000), 10),
-  enabled: process.env.ANONYMIZER_ENABLED !== "false",
-};
-
 // ── Zenodo (ZEN-01) ──────────────────────────────────────────────────────────
 // Lazy getters (instead of values captured at import time) so unit tests can
 // set the variables at runtime, and so a missing ENCRYPTION_KEY only fails when

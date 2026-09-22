@@ -92,8 +92,6 @@ const studies: Expected[] = [
 const upload: Expected[] = [
   { method: "post", path: "/api/v1/studies/upload", roles: STAFF },
   { method: "post", path: "/api/instances", roles: STAFF },
-  { method: "post", path: "/api/v1/studies/upload-batch", roles: STAFF },
-  { method: "get", path: "/api/v1/anonymization/:jobId", roles: STAFF },
 ];
 
 const activity: Expected[] = [
@@ -142,8 +140,8 @@ describe("RBAC route matrix", () => {
     });
   }
 
-  it("gates 39 authenticated endpoints in total", () => {
+  it("gates 37 authenticated endpoints in total", () => {
     const total = suites.reduce((sum, [, r]) => sum + gatedRouteCount(r), 0);
-    expect(total).toBe(39);
+    expect(total).toBe(37);
   });
 });
