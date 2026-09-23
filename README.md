@@ -180,7 +180,7 @@ Para activar los Git Hooks localmente, asegúrate de tener instalado `pre-commit
 make hooks
 ```
 
-Esto ejecutará automáticamente **Prettier**, **ESLint**, **CSpell** y las **pruebas de integración** antes de confirmar o subir tus commits.
+Esto ejecutará automáticamente **Prettier**, **ESLint** y las **pruebas de integración** antes de confirmar o subir tus commits.
 
 ## Seguimiento de Cobertura
 
