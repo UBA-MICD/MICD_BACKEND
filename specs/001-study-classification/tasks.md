@@ -13,7 +13,7 @@
 
 ## Phase 2 — Implementation
 
-- [ ] T020 Migration `src/db/migrations/013_pathologies.ts` — create `pathologies (id, key VARCHAR(15) UNIQUE)`, seed the 6 keys (`ON CONFLICT DO NOTHING`), add `studies.classification_id INTEGER REFERENCES pathologies(id)`; register in `src/db/migrate.ts`.
+- [ ] T020 Migration `src/db/migrations/014_pathologies.ts` — create `pathologies (id, key VARCHAR(15) UNIQUE)`, seed the 6 keys (`ON CONFLICT DO NOTHING`), add `studies.classification_id INTEGER REFERENCES pathologies(id)`; register in `src/db/migrate.ts`.
 - [ ] T021 New module `src/modules/pathologies/` — `repository` (`listPathologies`, `pathologyExists`), thin `service`, `controller` (GET), `routes`.
 - [ ] T022 `src/app.ts` — mount the router at `/api/v1/pathologies`.
 - [ ] T023 `upload.controller.ts` — parse + integer-validate `req.body.classification_id` (400 on non-integer), pass to service.

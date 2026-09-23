@@ -40,7 +40,6 @@ export async function validateStudy(
     throw new HttpError(404, { error: "Estudio no encontrado." });
   }
 
-  // cspell:ignore validación registrada Usar corregirla
   const prior = await repo.findLatestValidation(studyId);
   if (prior) {
     throw new HttpError(409, {

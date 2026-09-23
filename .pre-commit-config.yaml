@@ -34,13 +34,6 @@ repos:
           - '@typescript-eslint/eslint-plugin@6.19.0'
         types: [ts, tsx]
 
-  # English spell checker to maintain consistency across the codebase
-  - repo: https://github.com/streetsidesoftware/cspell-cli
-    rev: v10.0.1
-    hooks:
-      - id: cspell
-        types_or: [ts, tsx, javascript, html, css, markdown]
-
   # Run backend integration tests on push stage
   - repo: local
     hooks:

@@ -10,7 +10,7 @@ import { uploadStudy } from "./upload.controller";
  * instances uploaded either way appear in the explorer.
  *
  * Ingest is a write, so it is limited to clinical staff (admin + medico);
- * investigador is read-only.
+ * investigador is read-only. DICOM is anonymized client-side before upload.
  */
 export const uploadRouter = Router();
 

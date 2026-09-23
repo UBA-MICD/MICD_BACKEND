@@ -52,8 +52,8 @@ existing per-`orthanc_study_id` aggregation — no GROUP BY change.
 
 ## Affected files
 
-- `src/db/migrations/013_pathologies.ts` **(new)** — `CREATE TABLE IF NOT EXISTS pathologies (…)`; `INSERT … ON CONFLICT (key) DO NOTHING` seed; `ALTER TABLE studies ADD COLUMN IF NOT EXISTS classification_id INTEGER REFERENCES pathologies(id)`.
-- `src/db/migrate.ts` — import `migration013`, append to the `migrations` array.
+- `src/db/migrations/014_pathologies.ts` **(new)** — `CREATE TABLE IF NOT EXISTS pathologies (…)`; `INSERT … ON CONFLICT (key) DO NOTHING` seed; `ALTER TABLE studies ADD COLUMN IF NOT EXISTS classification_id INTEGER REFERENCES pathologies(id)`.
+- `src/db/migrate.ts` — import `migration014`, append to the `migrations` array.
 - `src/modules/pathologies/pathologies.repository.ts` **(new)** — `listPathologies()`, `pathologyExists(id)`.
 - `src/modules/pathologies/pathologies.service.ts` **(new, thin)** — passes through to the repository.
 - `src/modules/pathologies/pathologies.controller.ts` **(new)** — `GET` handler → `200 [{id,key}]`.

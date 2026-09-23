@@ -1,4 +1,4 @@
-// Migration 013 — Pathology classification catalog + study FK.
+// Migration 014 — Pathology classification catalog + study FK.
 //
 // A backend-owned lookup of pathology categories. Each row is a stable machine
 // `key` (VARCHAR(15) — the longest key, "desmielinizante", is exactly 15) and
@@ -9,8 +9,8 @@
 // Idempotent: CREATE TABLE IF NOT EXISTS, seed with ON CONFLICT DO NOTHING, and
 // ADD COLUMN IF NOT EXISTS (which also skips the FK once the column exists).
 
-export const migration013 = {
-  id: "013_pathologies",
+export const migration014 = {
+  id: "014_pathologies",
   sql: [
     `CREATE TABLE IF NOT EXISTS pathologies (
        id  SERIAL PRIMARY KEY,
