@@ -18,6 +18,7 @@ yarn-error.log*
 .env.*
 !.env.example
 !.env.prod.example
+!.env.staging.example
 
 # ── OS generated files ────────────────────────────────────────────────────────
 .DS_Store
