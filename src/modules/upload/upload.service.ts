@@ -32,10 +32,15 @@ export interface UploadResult {
 }
 
 /**
- * Ingest a single DICOM file: validate it, push it to Orthanc, extract its
- * tags, and upsert the metadata into Postgres. Throws HttpError for every
- * client-visible failure (400 invalid / 413 too large / 409 duplicate /
- * 503 Orthanc down / 500 DB write failed).
+ * Ingest a single DICOM file: push it to Orthanc, extract its tags, and upsert
+ * the metadata into Postgres. Throws HttpError for every client-visible failure
+ * (413 too large / 400 invalid / 409 duplicate / 503 Orthanc down / 500 DB
+ * write failed).
+ *
+ * Anonymization is handled in the client before the bytes ever leave the
+ * browser/desktop app (the web JS scrubber or, in the desktop build, the Python
+ * anonymizer via PythonShell). The backend therefore stores what it receives
+ * and no longer talks to an anonymization module.
  */
 export async function uploadDicom(
   file: { buffer: Buffer; size: number },
@@ -48,10 +53,26 @@ export async function uploadDicom(
     });
   }
 
-  // Upload to Orthanc
+  const stored = await storeInstance(file.buffer, force);
+  return { study: stored.study, orthanc: stored.orthanc };
+}
+
+interface StoredInstance {
+  study: any;
+  orthanc: any;
+  studyId: string;
+}
+
+/**
+ * Push a DICOM to Orthanc, read back its tags and upsert the study metadata.
+ */
+async function storeInstance(
+  buffer: Buffer,
+  force: boolean,
+): Promise<StoredInstance> {
   let orthancData: any;
   try {
-    const { data } = await orthancClient.postInstance(file.buffer);
+    const { data } = await orthancClient.postInstance(buffer);
     orthancData = data;
   } catch (err: any) {
     console.error(
@@ -96,9 +117,7 @@ export async function uploadDicom(
   const seriesDescription = extractTag(tags, "0008,103e"); // Series Description
   const numberOfImages = extractInt(tags, "0020,1208"); // Number of Study Related Images
 
-  console.log(
-    `[upload] tags — sopUid=${sopInstanceUid} patient=${patientName} modality=${modality}`,
-  );
+  console.log(`[upload] tags — sopUid=${sopInstanceUid} modality=${modality}`);
 
   // Duplicate detected — ask the user before overwriting
   if (isAlreadyStored) {
@@ -147,5 +166,5 @@ export async function uploadDicom(
     });
   }
 
-  return { study, orthanc: orthancData };
+  return { study, orthanc: orthancData, studyId };
 }

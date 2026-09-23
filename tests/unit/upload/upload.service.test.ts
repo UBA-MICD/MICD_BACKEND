@@ -107,7 +107,7 @@ describe("uploadDicom — file validation", () => {
 // ── Orthanc interaction ───────────────────────────────────────────────────────
 
 describe("uploadDicom — Orthanc upload", () => {
-  it("posts the file buffer to Orthanc", async () => {
+  it("posts the received buffer to Orthanc (anonymization is client-side)", async () => {
     await uploadDicom(SMALL_FILE, false);
     expect(orthancClient.postInstance).toHaveBeenCalledWith(SMALL_BUFFER);
   });

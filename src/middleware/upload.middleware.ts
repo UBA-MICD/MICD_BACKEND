@@ -18,30 +18,47 @@ const upload = multer({
 
 const singleFile = upload.single("file");
 
+// Multi-file (study) uploads use the same in-memory storage and per-file size
+// ceiling; only the field name and count differ (US-16 batch endpoint).
+const MAX_BATCH_FILES = 1000;
+const multiFile = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: uploadConfig.maxFileBytes, files: MAX_BATCH_FILES },
+}).array("files", MAX_BATCH_FILES);
+
+/** Shared multer error → HTTP status mapping (413 too big / 400 malformed). */
+function handleMulterError(
+  err: unknown,
+  res: Parameters<RequestHandler>[1],
+  next: Parameters<RequestHandler>[2],
+): void {
+  if (!err) {
+    next();
+    return;
+  }
+  if (err instanceof multer.MulterError) {
+    if (err.code === "LIMIT_FILE_SIZE") {
+      res.status(413).json({
+        error: `File exceeds maximum allowed size of ${uploadConfig.maxFileBytes} bytes`,
+      });
+      return;
+    }
+    res.status(400).json({ error: `Invalid upload request: ${err.code}` });
+    return;
+  }
+  next(err);
+}
+
 /**
  * multer reports a tripped limit by calling next(err), and these routes have no
  * error-handling middleware — without this wrapper the default express handler
- * turns every one of them into a 500 HTML page. Map them to the same statuses
- * the upload service uses: 413 for "too big", 400 for a malformed request.
+ * turns every one of them into a 500 HTML page.
  */
 export const uploadSingleFile: RequestHandler = (req, res, next) => {
-  singleFile(req, res, (err: unknown) => {
-    if (!err) {
-      next();
-      return;
-    }
+  singleFile(req, res, (err: unknown) => handleMulterError(err, res, next));
+};
 
-    if (err instanceof multer.MulterError) {
-      if (err.code === "LIMIT_FILE_SIZE") {
-        res.status(413).json({
-          error: `File exceeds maximum allowed size of ${uploadConfig.maxFileBytes} bytes`,
-        });
-        return;
-      }
-      res.status(400).json({ error: `Invalid upload request: ${err.code}` });
-      return;
-    }
-
-    next(err);
-  });
+/** Same as {@link uploadSingleFile} but for the `files` field (study batch). */
+export const uploadMultipleFiles: RequestHandler = (req, res, next) => {
+  multiFile(req, res, (err: unknown) => handleMulterError(err, res, next));
 };
