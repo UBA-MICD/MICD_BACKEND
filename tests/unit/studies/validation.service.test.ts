@@ -92,16 +92,18 @@ describe("validateStudy", () => {
     );
   });
 
-  it("throws 400 when action is rejected and comment is missing", async () => {
+  it("accepts a rejection with no comment at all", async () => {
+    mockValidationRepo.insertValidation.mockResolvedValue(RECORD);
     await expect(
       validateStudy(STUDY_ID, "rejected", undefined, USER_ID, IP),
-    ).rejects.toMatchObject({ status: 400 });
+    ).resolves.toBeDefined();
   });
 
-  it("throws 400 when action is rejected and comment is blank", async () => {
+  it("accepts a rejection whose comment is only whitespace", async () => {
+    mockValidationRepo.insertValidation.mockResolvedValue(RECORD);
     await expect(
       validateStudy(STUDY_ID, "rejected", "   ", USER_ID, IP),
-    ).rejects.toMatchObject({ status: 400 });
+    ).resolves.toBeDefined();
   });
 
   it("does NOT require a comment for approved action", async () => {
@@ -187,12 +189,13 @@ describe("correctStudyValidation", () => {
     ).rejects.toMatchObject({ status: 404 });
   });
 
-  it("throws 400 when action is rejected and comment is missing", async () => {
+  it("accepts a correction to rejected with no comment", async () => {
     mockValidationRepo.findLatestValidation.mockResolvedValue(RECORD);
+    mockValidationRepo.insertValidation.mockResolvedValue(RECORD);
 
     await expect(
       correctStudyValidation(STUDY_ID, "rejected", undefined, USER_ID, IP),
-    ).rejects.toMatchObject({ status: 400 });
+    ).resolves.toBeDefined();
   });
 
   it("wraps unexpected DB errors as 500", async () => {

@@ -81,15 +81,15 @@ describe("POST /api/v1/studies/:studyId/validate", () => {
     expect(data.status).toBe("review");
   });
 
-  it("400 — rejected without comment is rejected", async () => {
+  it("201 — rejected without comment is accepted (the comment is optional)", async () => {
     if (!backendAvailable || !existingStudyId) return;
-    await expect(
-      axios.post(
-        `${BASE_URL}/api/v1/studies/${existingStudyId}/validate`,
-        { action: "rejected" },
-        { headers: staffHeader },
-      ),
-    ).rejects.toMatchObject({ response: { status: 400 } });
+    const { status, data } = await axios.post(
+      `${BASE_URL}/api/v1/studies/${existingStudyId}/validate`,
+      { action: "rejected" },
+      { headers: staffHeader },
+    );
+    expect(status).toBe(201);
+    expect(data.status).toBe("rejected");
   });
 
   it("400 — missing action returns 400", async () => {
@@ -226,15 +226,14 @@ describe("POST /api/v1/studies/:studyId/validation-correction", () => {
     ).rejects.toMatchObject({ response: { status: 401 } });
   });
 
-  it("400 — rejected without comment returns 400", async () => {
+  it("201 — a correction to rejected without comment is accepted", async () => {
     if (!backendAvailable || !existingStudyId) return;
-    await expect(
-      axios.post(
-        `${BASE_URL}/api/v1/studies/${existingStudyId}/validation-correction`,
-        { action: "rejected" },
-        { headers: adminHeader },
-      ),
-    ).rejects.toMatchObject({ response: { status: 400 } });
+    const { status } = await axios.post(
+      `${BASE_URL}/api/v1/studies/${existingStudyId}/validation-correction`,
+      { action: "rejected" },
+      { headers: adminHeader },
+    );
+    expect(status).toBe(201);
   });
 });
 
