@@ -178,3 +178,68 @@ describe("POST /api/v1/studies/upload", () => {
     expect(data.studies[0]).toHaveProperty("num_instances");
   });
 });
+
+describe("POST /api/v1/studies/upload — classification", () => {
+  // Uploads use ?force=true so this block is order-independent and re-runnable:
+  // it overwrites the sample study's classification each time.
+  function uploadWith(classificationId?: number) {
+    const form = new FormData();
+    if (classificationId !== undefined) {
+      form.append("classification_id", String(classificationId));
+    }
+    form.append("file", fs.createReadStream(SAMPLE_DCM), { filename: "test.dcm" });
+    return axios.post(`${BASE_URL}/api/v1/studies/upload?force=true`, form, {
+      headers: { ...form.getHeaders(), ...authHeader },
+    });
+  }
+
+  async function studyRow(orthancStudyId: string) {
+    const { data } = await axios.get(`${BASE_URL}/api/v1/studies?limit=100`, {
+      headers: authHeader,
+    });
+    return data.studies.find(
+      (s: any) => s.orthanc_study_id === orthancStudyId,
+    );
+  }
+
+  it("persists a valid classification_id and returns it in the listing", async () => {
+    if (!backendAvailable) return;
+    if (!fs.existsSync(SAMPLE_DCM)) return;
+
+    const { data: catalog } = await axios.get(
+      `${BASE_URL}/api/v1/pathologies`,
+      { headers: authHeader },
+    );
+    const tumor = catalog.find((p: any) => p.key === "tumor");
+    expect(tumor).toBeTruthy();
+
+    const up = await uploadWith(tumor.id);
+    expect(up.status).toBe(201);
+
+    const s = await studyRow(up.data.study.orthanc_study_id);
+    expect(s).toBeTruthy();
+    expect(s.classification_id).toBe(tumor.id);
+    expect(s.classification_key).toBe("tumor");
+  });
+
+  it("rejects an unknown classification_id → 400 (no free text)", async () => {
+    if (!backendAvailable) return;
+    if (!fs.existsSync(SAMPLE_DCM)) return;
+    await expect(uploadWith(999999)).rejects.toMatchObject({
+      response: { status: 400 },
+    });
+  });
+
+  it("stores null when no classification_id is sent", async () => {
+    if (!backendAvailable) return;
+    if (!fs.existsSync(SAMPLE_DCM)) return;
+
+    const up = await uploadWith(); // no classification field
+    expect(up.status).toBe(201);
+
+    const s = await studyRow(up.data.study.orthanc_study_id);
+    expect(s).toBeTruthy();
+    expect(s.classification_id).toBeNull();
+    expect(s.classification_key).toBeNull();
+  });
+});
