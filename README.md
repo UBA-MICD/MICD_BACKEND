@@ -121,6 +121,65 @@ Tanto el script de testing como el proceso de seeding y health-check leen dinám
 
 ---
 
+## Anonimización: qué verifica el backend (US-16)
+
+El backend **no anonimiza**: los DICOM llegan ya anonimizados desde el cliente,
+que los procesa en la máquina del usuario (ver el README de `MICD_WEB`). Lo que
+sí hace es **verificar**, porque de este lado está la puerta de salida pública.
+
+### Verificación en la ingesta
+
+Al subir una instancia, el backend lee los tags que Orthanc devuelve y
+comprueba que no quede valor identificatorio: nombres, direcciones, teléfonos e
+institución vacíos o con placeholder; `PatientID`, `AccessionNumber` y `StudyID`
+hasheados; fecha de nacimiento neutralizada; y el atestado PS3.15
+`PatientIdentityRemoved = YES`.
+
+Sólo si eso pasa se completa `studies.anonymized_at`. **Esa columna registra una
+verificación, no una afirmación de quien sube.** Una instancia que no pasa se
+guarda igual, pero queda sin verificar, y por lo tanto no se puede publicar.
+
+> El código está en [`src/shared/phi-verification.ts`](src/shared/phi-verification.ts).
+
+### Verificación antes de publicar en Zenodo
+
+Publicar genera un **DOI público y permanente**, así que esa ruta no se fía de
+la columna: vuelve a leer los tags desde Orthanc, instancia por instancia, y
+rechaza si encuentra algo identificatorio. La verificación corre en todos los
+caminos que pueden terminar publicando, incluido el reintento.
+
+| Código | HTTP | Cuándo |
+|---|---|---|
+| `not_anonymized` | 422 | Alguna instancia no tiene `anonymized_at` |
+| `phi_detected` | 422 | Los tags almacenados todavía tienen datos identificatorios |
+| `verification_unavailable` | 503 | No se pudieron leer los tags (Orthanc caído) — falla cerrado |
+
+El mensaje de error nombra los tags y el motivo, **nunca los valores**, para no
+reintroducir el dato que está reportando en logs ni en respuestas HTTP.
+
+### Alcance y límites
+
+- La verificación mira **sólo tags de primer nivel**. No recorre secuencias
+  anidadas ni enumera tags privados (el perfil del anonimizador los elimina).
+- **No mira los píxeles.** El texto quemado en la imagen sobrevive a esta
+  comprobación — hallazgo H1 de `ANONYMIZATION_SECURITY_REVIEW.md`.
+- Un cliente que no sea el visor (por ejemplo `curl`) puede subir PHI: la
+  ingesta lo marca como no verificado, pero no lo rechaza (hallazgo M1).
+
+No hay variables de entorno nuevas.
+
+### Cómo correr las pruebas
+
+```bash
+npm run test:unit    # incluye tests/unit/shared/phi-verification.test.ts
+make test            # unitarias + integración contra la pila levantada
+```
+
+La suite de extremo a extremo con DICOM con PHI falso (subir → verificar lo que
+quedó en Orthanc) vive en `testing/anonymization/` — ver su README.
+
+---
+
 ## Despliegue en Producción
 
 `docker-compose.prod.yml` es un stack completo independiente (no un overlay sobre `docker-compose.yml`) pensado para un despliegue real: sin puertos publicados para Postgres/Orthanc, imágenes ancladas por digest, `cap_drop: ALL` + `read_only` en el backend, límites de CPU/memoria y rotación de logs. Usa los mismos nombres de contenedor y red que `docker-compose.yml`, así que **no corras ambos stacks a la vez** — este reemplaza al otro para producción.
