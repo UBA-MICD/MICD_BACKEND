@@ -15,6 +15,12 @@ export interface StudyMetadata {
   instanceNumber: number | null;
   rows: number | null;
   cols: number | null;
+  /**
+   * When the stored instance was verified to carry no identifying tags, or
+   * null when it was not. Written only from a verification of the tags Orthanc
+   * read back — never from a caller's assertion (see shared/phi-verification).
+   */
+  anonymizedAt: Date | null;
 }
 
 /** Look up an existing row by its unique SOP Instance UID. */
@@ -44,8 +50,8 @@ export async function upsertStudy(m: StudyMetadata): Promise<any> {
        (orthanc_study_id, orthanc_instance_id, sop_instance_uid, study_instance_uid,
         patient_name, patient_id, study_date, modality, study_description,
         series_description, number_of_images,
-        instance_number, rows_count, cols_count)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+        instance_number, rows_count, cols_count, anonymized_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
      ON CONFLICT (sop_instance_uid) DO UPDATE SET
        orthanc_study_id    = EXCLUDED.orthanc_study_id,
        orthanc_instance_id = EXCLUDED.orthanc_instance_id,
@@ -60,6 +66,7 @@ export async function upsertStudy(m: StudyMetadata): Promise<any> {
        instance_number     = EXCLUDED.instance_number,
        rows_count          = EXCLUDED.rows_count,
        cols_count          = EXCLUDED.cols_count,
+       anonymized_at       = EXCLUDED.anonymized_at,
        uploaded_at         = NOW()
      RETURNING *`,
     [
@@ -77,6 +84,7 @@ export async function upsertStudy(m: StudyMetadata): Promise<any> {
       m.instanceNumber,
       m.rows,
       m.cols,
+      m.anonymizedAt,
     ],
   );
   return rows[0];

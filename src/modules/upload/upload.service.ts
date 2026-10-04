@@ -1,6 +1,10 @@
 import { orthancClient } from "../../clients/orthanc.client";
 import { HttpError } from "../../shared/http-error";
 import { uploadConfig } from "../../config/env";
+import {
+  describeFindings,
+  verifyInstanceTags,
+} from "../../shared/phi-verification";
 import * as repo from "./upload.repository";
 
 // Same ceiling multer enforces while streaming (see upload.middleware.ts);
@@ -37,10 +41,16 @@ export interface UploadResult {
  * (413 too large / 400 invalid / 409 duplicate / 503 Orthanc down / 500 DB
  * write failed).
  *
- * Anonymization is handled in the client before the bytes ever leave the
- * browser/desktop app (the web JS scrubber or, in the desktop build, the Python
- * anonymizer via PythonShell). The backend therefore stores what it receives
- * and no longer talks to an anonymization module.
+ * Anonymization is handled on the client, before the bytes ever leave the
+ * user's machine, so this stores what it receives rather than anonymizing.
+ * It does, however, *verify* what it received: the tags Orthanc reads back are
+ * checked, and `studies.anonymized_at` is set only when they carry no
+ * identifying value. That column gates publication to Zenodo, so it must
+ * record a verification rather than a caller's assertion.
+ *
+ * An instance that fails the check is still stored (rejecting it is finding
+ * M1, a separate change) but is left unverified, which keeps it out of any
+ * outward-facing path.
  */
 export async function uploadDicom(
   file: { buffer: Buffer; size: number },
@@ -117,7 +127,14 @@ async function storeInstance(
   const seriesDescription = extractTag(tags, "0008,103e"); // Series Description
   const numberOfImages = extractInt(tags, "0020,1208"); // Number of Study Related Images
 
-  console.log(`[upload] tags — sopUid=${sopInstanceUid} modality=${modality}`);
+  // Verify rather than trust: this is what may later set anonymized_at.
+  const verification = verifyInstanceTags(tags);
+  console.log(
+    `[upload] tags — sopUid=${sopInstanceUid} modality=${modality} anonymized=${verification.clean}` +
+      (verification.clean
+        ? ""
+        : ` unverified=[${describeFindings(verification.findings)}]`),
+  );
 
   // Duplicate detected — ask the user before overwriting
   if (isAlreadyStored) {
@@ -158,6 +175,7 @@ async function storeInstance(
       instanceNumber,
       rows,
       cols,
+      anonymizedAt: verification.clean ? new Date() : null,
     });
   } catch (err: any) {
     throw new HttpError(500, {
