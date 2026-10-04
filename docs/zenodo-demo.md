@@ -107,7 +107,7 @@ curl -s "http://localhost:3000/api/v1/zenodo/depositions/1" \
   -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
 ```
 
-Para publicar un estudio nuevo (requiere tener un DICOM subido a Orthanc con `anonymized_at` seteado):
+Para publicar un estudio nuevo (requiere subir el DICOM **ya anonimizado** por la API: la ingesta verifica los tags y sólo entonces completa `anonymized_at`):
 
 ```bash
 curl -s -X POST http://localhost:3000/api/v1/zenodo/publish \
