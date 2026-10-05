@@ -25,6 +25,7 @@ const ENV_KEYS = [
   "TLS_KEY_PATH",
   "TRUST_PROXY",
   "HOST",
+  "ANONYMIZATION_VERIFY_MODE",
 ] as const;
 
 type EnvOverrides = Partial<Record<(typeof ENV_KEYS)[number], string>>;
@@ -223,6 +224,28 @@ describe("config/env — production DB/Orthanc weak-password guard", () => {
   });
 });
 
+describe("config/env — anonymization verify mode (TK-11)", () => {
+  it("defaults to strict when the var is unset", () => {
+    expect(loadEnv().anonymizationConfig.verifyMode).toBe("strict");
+  });
+
+  it.each(["strict", "warn", "WARN", "  Strict  "])(
+    "accepts %j (case/space-insensitive)",
+    (value) => {
+      const mode = loadEnv({
+        ANONYMIZATION_VERIFY_MODE: value,
+      }).anonymizationConfig.verifyMode;
+      expect(["strict", "warn"]).toContain(mode);
+    },
+  );
+
+  it("fails startup (throws on import) for an invalid value", () => {
+    expect(() => loadEnv({ ANONYMIZATION_VERIFY_MODE: "lenient" })).toThrow(
+      /ANONYMIZATION_VERIFY_MODE must be "strict" or "warn"/,
+    );
+  });
+});
+
 describe("config/env — TLS", () => {
   it("defaults to TLS disabled with no cert/key paths", () => {
     const env = loadEnv();
@@ -268,7 +291,9 @@ describe("config/env — trust proxy", () => {
   it.each(["0", "false", "FALSE"])(
     "disables proxy trust entirely for TRUST_PROXY=%j",
     (value) => {
-      expect(loadEnv({ TRUST_PROXY: value }).serverConfig.trustProxy).toBe(false);
+      expect(loadEnv({ TRUST_PROXY: value }).serverConfig.trustProxy).toBe(
+        false,
+      );
     },
   );
 
