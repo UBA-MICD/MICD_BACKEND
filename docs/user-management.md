@@ -76,3 +76,9 @@ tokens, so that window is the entire residual access.
 both are set; the password is hashed in-database). `SMTP_*` configure mail; with
 `SMTP_HOST` unset the invite link is logged to stdout instead of sent (dev/CI).
 `APP_BASE_URL` builds the invite link. See `.env.example`.
+
+## Password recovery
+
+Active users can reset a forgotten password themselves (email code → new
+password). This is separate from invites: invited users are ignored by it.
+See [`password-recovery.md`](./password-recovery.md).
