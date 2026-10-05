@@ -81,6 +81,8 @@ services:
       JWT_ACCESS_TTL: 15m
       JWT_REFRESH_TTL: 7d
       BCRYPT_ROUNDS: 4
+      # The recovery suite makes more requests than the production per-IP budget.
+      RATE_LIMIT_PASSWORD_RESET_MAX: 100
     depends_on:
       postgres:
         condition: service_healthy
