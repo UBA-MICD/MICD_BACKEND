@@ -65,4 +65,6 @@ Gate: `npx tsc --noEmit` + unit tests in `node:20-alpine`; `make test-integratio
 Gate: `npm run build && npm test` in `node:22-alpine`.
 
 ### Desktop
-`make sync-web` + `make parity`, commit on `feat/password-recovery` off `dev`.
+`make sync-web` + `make parity`. **Deferred:** desktop `dev` is many features
+behind `web/dev` (MPR, segmentation, walkthrough, validations…), so a sync would
+vendor all of them at once. Do it as part of the next full desktop catch-up.
