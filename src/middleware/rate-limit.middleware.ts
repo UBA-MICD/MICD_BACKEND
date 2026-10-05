@@ -39,6 +39,18 @@ export const inviteRateLimiter = rateLimit({
 });
 
 /**
+ * Rate limiter for the public password-recovery endpoints (request, validate,
+ * reset). Its own budget so recovery traffic can't lock out logins or invites.
+ * Counts every request: each forgot-password call may send an email, so this is
+ * also the per-IP brake on email bombing (a per-account cooldown backs it up).
+ */
+export const passwordResetRateLimiter = rateLimit({
+  ...base,
+  limit: rateLimitConfig.passwordResetMax,
+  message: { error: "Too many attempts. Try again later." },
+});
+
+/**
  * Refresh takes an unguessable token, but it was previously the one auth route
  * with no ceiling at all — leaving a free oracle to grind tokens against and an
  * unbounded way to force bcrypt-free DB work. The budget is well above what a

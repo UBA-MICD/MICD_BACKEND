@@ -211,6 +211,117 @@ export const openapiSpec = {
       },
     },
 
+    "/auth/forgot-password": {
+      post: {
+        tags: ["auth"],
+        summary: "Request a password reset code by email",
+        description:
+          "Always returns 202, whether or not the email belongs to an active " +
+          "account, so it can't be used to discover accounts. For an active " +
+          "account a one-time code (valid 1 hour) is emailed, with a link to " +
+          "APP_BASE_URL/?reset=<code>; at most one code per account per minute. " +
+          "Rate-limited per IP.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["email"],
+                properties: {
+                  email: { type: "string", format: "email" },
+                  locale: { type: "string", enum: ["es", "en"], default: "es" },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "202": {
+            description: "Accepted (sent if the account exists and is active)",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: { ok: { type: "boolean", example: true } },
+                },
+              },
+            },
+          },
+          "400": errorResponse("email is required"),
+          "429": errorResponse("Too many attempts. Try again later."),
+        },
+      },
+    },
+
+    "/auth/reset-password/{code}": {
+      get: {
+        tags: ["auth"],
+        summary: "Validate a password reset code",
+        description:
+          "Returns the email of the account the code belongs to, so the reset " +
+          "screen can name it. Rate-limited per IP.",
+        parameters: [
+          { name: "code", in: "path", required: true, schema: { type: "string" } },
+        ],
+        responses: {
+          "200": {
+            description: "Valid code",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: { email: { type: "string", format: "email" } },
+                },
+              },
+            },
+          },
+          "404": errorResponse("Invalid or expired reset code"),
+          "429": errorResponse("Too many attempts. Try again later."),
+        },
+      },
+    },
+
+    "/auth/reset-password": {
+      post: {
+        tags: ["auth"],
+        summary: "Set a new password with a reset code",
+        description:
+          "Consumes the code (single use), sets the new password (min 8 " +
+          "characters), revokes every existing refresh token for the account " +
+          "and returns a fresh session. Rate-limited per IP.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["code", "password"],
+                properties: {
+                  code: { type: "string" },
+                  password: { type: "string", format: "password", minLength: 8 },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "Password changed; signed in",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LoginResponse" },
+              },
+            },
+          },
+          "400": errorResponse(
+            "code and password are required / password too short / invalid or expired reset code",
+          ),
+          "429": errorResponse("Too many attempts. Try again later."),
+        },
+      },
+    },
+
     "/api/livez": {
       get: {
         tags: ["health"],
