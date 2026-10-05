@@ -65,6 +65,7 @@ Gate: `npx tsc --noEmit` + unit tests in `node:20-alpine`; `make test-integratio
 Gate: `npm run build && npm test` in `node:22-alpine`.
 
 ### Desktop
-`make sync-web` + `make parity`. **Deferred:** desktop `dev` is many features
-behind `web/dev` (MPR, segmentation, walkthrough, validations…), so a sync would
-vendor all of them at once. Do it as part of the next full desktop catch-up.
+Synced on `feat/password-recovery` (MICD_APP): `make sync-web` from
+`web@feat/password-recovery`, `make parity` clean, 912/912 tests. The sync also
+brings in the web `dev` changes desktop hadn't vendored yet (segmentation UI,
+export-annotation, …).
