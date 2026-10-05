@@ -1,6 +1,11 @@
 import { orthancClient } from "../../clients/orthanc.client";
 import { HttpError } from "../../shared/http-error";
-import { uploadConfig } from "../../config/env";
+import { anonymizationConfig, uploadConfig } from "../../config/env";
+import {
+  describeFindings,
+  verifyInstanceTags,
+  type PhiFinding,
+} from "../../shared/phi-verification";
 import * as repo from "./upload.repository";
 import { pathologyExists } from "../pathologies/pathologies.service";
 
@@ -30,18 +35,30 @@ function extractInt(tags: Record<string, any>, tag: string): number | null {
 export interface UploadResult {
   study: any;
   orthanc: any;
+  studyId: string;
+  /** PHI-free summary of the pre-storage check, surfaced to the user (TK-11). */
+  verification: {
+    needsReview: boolean;
+    findings: PhiFinding[];
+  };
 }
 
 /**
  * Ingest a single DICOM file: push it to Orthanc, extract its tags, and upsert
  * the metadata into Postgres. Throws HttpError for every client-visible failure
- * (413 too large / 400 invalid / 409 duplicate / 503 Orthanc down / 500 DB
- * write failed).
+ * (413 too large / 400 invalid / 409 duplicate / 422 not anonymized / 503
+ * Orthanc down / 500 DB write failed).
  *
- * Anonymization is handled in the client before the bytes ever leave the
- * browser/desktop app (the web JS scrubber or, in the desktop build, the Python
- * anonymizer via PythonShell). The backend therefore stores what it receives
- * and no longer talks to an anonymization module.
+ * Anonymization is handled on the client, before the bytes ever leave the
+ * user's machine, so this stores what it receives rather than anonymizing.
+ * It does, however, *verify* what it received, without trusting it (TK-11): the
+ * tags Orthanc reads back are checked, and `studies.anonymized_at` is set only
+ * when they carry no identifying value.
+ *
+ * What a failed check does depends on ANONYMIZATION_VERIFY_MODE: in `strict`
+ * the instance is deleted from Orthanc and nothing is stored (the caller gets a
+ * 422 listing the offending tags); in `warn` it is stored but flagged
+ * `needs_review`. Either way the verifier is the gate, not the client.
  */
 export async function uploadDicom(
   file: { buffer: Buffer; size: number },
@@ -62,13 +79,19 @@ export async function uploadDicom(
   }
 
   const stored = await storeInstance(file.buffer, force, classificationId);
-  return { study: stored.study, orthanc: stored.orthanc };
+  return {
+    study: stored.study,
+    orthanc: stored.orthanc,
+    studyId: stored.studyId,
+    verification: stored.verification,
+  };
 }
 
 interface StoredInstance {
   study: any;
   orthanc: any;
   studyId: string;
+  verification: { needsReview: boolean; findings: PhiFinding[] };
 }
 
 /**
@@ -126,7 +149,49 @@ async function storeInstance(
   const seriesDescription = extractTag(tags, "0008,103e"); // Series Description
   const numberOfImages = extractInt(tags, "0020,1208"); // Number of Study Related Images
 
-  console.log(`[upload] tags — sopUid=${sopInstanceUid} modality=${modality}`);
+  // Verify rather than trust: this is what may later set anonymized_at.
+  const verification = verifyInstanceTags(tags);
+  console.log(
+    `[upload] tags — sopUid=${sopInstanceUid} modality=${modality} anonymized=${verification.clean}` +
+      (verification.clean
+        ? ""
+        : ` unverified=[${describeFindings(verification.findings)}]`),
+  );
+
+  // TK-11 — the check gates storage. A residual-PII (error) finding means the
+  // instance carries identifying data; in strict mode it must not be kept, so
+  // delete it from Orthanc (which drops the now-empty parents too) and refuse
+  // with the offending tag list — names and reasons only, never values.
+  const mode = anonymizationConfig.verifyMode;
+  if (!verification.clean && mode === "strict") {
+    try {
+      await orthancClient.deleteInstance(instanceId);
+    } catch (err: any) {
+      // Best-effort cleanup; still refuse the upload.
+      console.error(
+        `[upload] could not delete rejected instance ${instanceId}: ${err.message}`,
+      );
+    }
+    throw new HttpError(422, {
+      error: "not_anonymized",
+      message:
+        "El estudio conserva datos identificatorios y no fue almacenado.",
+      tags: verification.findings.map((f) => ({
+        tag: f.tag,
+        name: f.name,
+        reason: f.reason,
+        severity: f.severity,
+      })),
+    });
+  }
+
+  // Not blocked (warn mode, or only warnings): record WHY for a human. In warn
+  // mode that includes the error findings we are letting through; in strict it
+  // is just the warnings. PhiFinding is PHI-free by construction.
+  const reviewFindings: PhiFinding[] = verification.findings.filter(
+    (f) => mode === "warn" || f.severity === "warning",
+  );
+  const needsReview = reviewFindings.length > 0;
 
   // Duplicate detected — ask the user before overwriting
   if (isAlreadyStored) {
@@ -167,7 +232,10 @@ async function storeInstance(
       instanceNumber,
       rows,
       cols,
+      anonymizedAt: verification.clean ? new Date() : null,
       classificationId,
+      needsReview,
+      reviewFindings: needsReview ? reviewFindings : undefined,
     });
   } catch (err: any) {
     throw new HttpError(500, {
@@ -176,5 +244,10 @@ async function storeInstance(
     });
   }
 
-  return { study, orthanc: orthancData, studyId };
+  return {
+    study,
+    orthanc: orthancData,
+    studyId,
+    verification: { needsReview, findings: reviewFindings },
+  };
 }

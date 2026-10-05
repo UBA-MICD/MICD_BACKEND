@@ -25,25 +25,27 @@ automatically by the database migrations on startup — nothing to insert by han
 
 ### Seed a study in the local DB
 
-The publish endpoint looks up the study in the local `studies` table (not directly in Orthanc). Insert a row pointing to an Orthanc study that has `anonymized_at` set:
+The publish endpoint looks up the study in the local `studies` table (not
+directly in Orthanc), and only publishes instances it can verify are
+anonymized. Get a study in by **uploading it through the API**, which is the
+only path that records a verification:
 
 ```bash
-# First upload DICOMs to Orthanc and get the study ID
-STUDY_ID=$(curl -s http://localhost:8042/studies -u orthanc:orthanc | jq -r '.[0]')
-
-# Then insert it into the local DB
-docker compose exec postgres psql -U micd -d micd -c "
-INSERT INTO studies (orthanc_study_id, orthanc_instance_id, sop_instance_uid, anonymized_at)
-VALUES (
-  '$STUDY_ID',
-  'YOUR-INSTANCE-ID',
-  'YOUR-SOP-UID',
-  NOW()
-) ON CONFLICT DO NOTHING;
-"
+curl -s -X POST "http://localhost:3000/api/v1/studies/upload" \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "file=@/path/to/anonymized.dcm"
 ```
 
-> **Tested values:** `orthanc_study_id = 6fbf0b01-6c97a45c-6ba1f385-136ebe7e-98953809`
+The file must already be anonymized — the web client does this before
+uploading (see `web/README.md`). Ingest sets `studies.anonymized_at` only when
+the tags Orthanc reads back carry no identifying value.
+
+> **Do not insert the row by hand, and do not set `anonymized_at` with SQL.**
+> An earlier version of this guide did, and that is precisely what made the
+> flag useless as a safety control (finding C1 in
+> `ANONYMIZATION_SECURITY_REVIEW.md`). Publishing now re-reads the tags from
+> Orthanc and refuses with `422 phi_detected` whatever the column says, so a
+> hand-seeded row will simply fail to publish.
 
 ### Get an auth token
 
@@ -152,9 +154,24 @@ curl -X POST http://localhost:3000/api/v1/zenodo/publish \
 
 **Test error — study not anonymized:**
 
-Insert a study without `anonymized_at`, then publish it.
+Upload a DICOM that still carries patient tags, then publish it.
 ```bash
 # Expected: 422 { "code": "not_anonymized" }
+```
+
+**Test error — stored instance still carries PHI:**
+
+Set `anonymized_at` by hand on a study whose DICOM is not anonymized, then
+publish it. The pre-publish verification reads the real tags and refuses.
+```bash
+# Expected: 422 { "code": "phi_detected" }
+```
+
+**Test error — Orthanc unreachable during verification:**
+
+Stop the Orthanc container, then publish. Verification fails closed.
+```bash
+# Expected: 503 { "code": "verification_unavailable" }
 ```
 
 **Test error — no credentials:**

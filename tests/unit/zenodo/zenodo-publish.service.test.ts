@@ -45,6 +45,36 @@ const INSTANCE_ROWS = [
 
 const DICOM_BUFFER = Buffer.from("DICM fake dicom data");
 
+/** Orthanc tag payload for an instance the anonymizer has already processed. */
+const ANONYMIZED_TAGS = {
+  "0010,0010": { Value: "" },
+  "0010,0020": { Value: "A1B2C3D4E5F60718" },
+  "0008,0080": { Value: "ANONYMIZED" },
+  "0012,0062": { Value: "YES" },
+};
+
+/**
+ * axios.get stand-in that tells Orthanc's two reads apart: `/tags` (the
+ * pre-publish PHI verification) and `/file` (the bytes). Ordered
+ * mockResolvedValueOnce chains cannot express this, since verification reads
+ * tags for every instance before any file is fetched.
+ */
+function mockOrthancGet(
+  body: unknown,
+  opts: { tags?: unknown; tagsError?: Error; fileError?: Error } = {},
+): void {
+  mockedAxios.get.mockImplementation(((url: unknown) => {
+    if (String(url).endsWith("/tags")) {
+      return opts.tagsError
+        ? Promise.reject(opts.tagsError)
+        : Promise.resolve({ data: opts.tags ?? ANONYMIZED_TAGS } as any);
+    }
+    return opts.fileError
+      ? Promise.reject(opts.fileError)
+      : Promise.resolve({ data: body } as any);
+  }) as any);
+}
+
 function makeClient() {
   return {
     query: jest.fn().mockResolvedValue({ rows: [] }),
@@ -82,12 +112,7 @@ function setupHappyPath() {
     // UPDATE completed inst-2
     .mockResolvedValueOnce({ rows: [] } as any)
 
-  // axios calls: orthanc file fetches (size check x2), then upload x2, then publish
-  mockedAxios.get
-    .mockResolvedValueOnce({ data: DICOM_BUFFER } as any) // inst-1 size check
-    .mockResolvedValueOnce({ data: DICOM_BUFFER } as any) // inst-2 size check
-    .mockResolvedValueOnce({ data: DICOM_BUFFER } as any) // inst-1 upload fetch
-    .mockResolvedValueOnce({ data: DICOM_BUFFER } as any); // inst-2 upload fetch
+  mockOrthancGet(DICOM_BUFFER);
 
   mockedAxios.post
     .mockResolvedValueOnce({
@@ -154,9 +179,7 @@ describe("publishStudy", () => {
   it("throws no_credentials when token is not configured", async () => {
     mockedGetStoredToken.mockResolvedValue(null);
     poolQuery.mockResolvedValueOnce({ rows: INSTANCE_ROWS } as any);
-    mockedAxios.get
-      .mockResolvedValueOnce({ data: DICOM_BUFFER } as any)
-      .mockResolvedValueOnce({ data: DICOM_BUFFER } as any);
+    mockOrthancGet(DICOM_BUFFER);
 
     await expect(publishStudy(PUBLISH_OPTS)).rejects.toMatchObject({
       code: "no_credentials",
@@ -178,10 +201,7 @@ describe("publishStudy", () => {
       } as any)
       .mockResolvedValue({ rows: [] } as any);
 
-    mockedAxios.get
-      .mockResolvedValueOnce({ data: DICOM_BUFFER } as any)
-      .mockResolvedValueOnce({ data: DICOM_BUFFER } as any)
-      .mockResolvedValueOnce({ data: DICOM_BUFFER } as any);
+    mockOrthancGet(DICOM_BUFFER);
 
     mockedAxios.post.mockResolvedValueOnce({
       data: { id: ZENODO_DEP_ID, links: { bucket: BUCKET_URL } },
@@ -240,6 +260,10 @@ describe("retryFailedFiles", () => {
           },
         ],
       } as any)
+      // every instance in the deposition (pre-retry PHI verification)
+      .mockResolvedValueOnce({
+        rows: [{ orthanc_instance_id: "inst-1" }],
+      } as any)
       // failed files
       .mockResolvedValueOnce({
         rows: [
@@ -255,7 +279,7 @@ describe("retryFailedFiles", () => {
       // publish → client queries
       .mockResolvedValue({ rows: [] } as any);
 
-    mockedAxios.get.mockResolvedValueOnce({ data: DICOM_BUFFER } as any);
+    mockOrthancGet(DICOM_BUFFER);
     mockedAxios.put.mockResolvedValueOnce({ data: {} } as any);
     mockedAxios.post.mockResolvedValueOnce({ data: { doi: DOI } } as any);
 
