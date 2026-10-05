@@ -2,7 +2,7 @@ import nodemailer, { type Transporter } from "nodemailer";
 import { smtpConfig, appBaseUrl } from "../config/env";
 
 /**
- * Invite email delivery. When SMTP is configured (SMTP_HOST set) an email is
+ * Invite and password-reset email delivery. When SMTP is configured (SMTP_HOST set) an email is
  * sent; otherwise the invite link is logged to stdout so dev, CI and the
  * integration suite work with no mail server. Behavior is gated on
  * smtpConfig.enabled, never on NODE_ENV (the test stack runs as production).
@@ -68,5 +68,47 @@ export async function sendInvite(
     return;
   }
   const { subject, text, html } = inviteTemplate(code, link, locale);
+  await tx.sendMail({ from: smtpConfig.from, to: email, subject, text, html });
+}
+
+/** Build the link the reset-password screen is reached by. */
+export function resetLink(code: string): string {
+  return `${appBaseUrl.value}/?reset=${encodeURIComponent(code)}`;
+}
+
+function resetTemplate(
+  code: string,
+  link: string,
+  locale: MailLocale,
+): { subject: string; text: string; html: string } {
+  if (locale === "en") {
+    return {
+      subject: "Reset your MICD password",
+      text: `Someone asked to reset the password of your MICD account.\n\nYour reset code is:\n\n    ${code}\n\nIn the app, open "Forgot your password?" and enter this code to choose a new password.\n\nYou can also open this link directly: ${link}\n\nThe code expires in 1 hour. If you didn't ask for this, ignore this email — your password won't change.`,
+      html: `<p>Someone asked to reset the password of your <strong>MICD</strong> account.</p><p>Your reset code is:</p><p style="font-size:20px;font-weight:bold;font-family:monospace;letter-spacing:1px">${code}</p><p>In the app, open <strong>"Forgot your password?"</strong> and enter this code to choose a new password.</p><p>You can also open this link directly: <a href="${link}">${link}</a></p><p>The code expires in 1 hour. If you didn't ask for this, ignore this email — your password won't change.</p>`,
+    };
+  }
+  return {
+    subject: "Restablecé tu contraseña de MICD",
+    text: `Alguien pidió restablecer la contraseña de tu cuenta de MICD.\n\nTu código de recuperación es:\n\n    ${code}\n\nEn la app, abrí "¿Olvidaste tu contraseña?" e ingresá este código para elegir una contraseña nueva.\n\nTambién podés abrir directamente este enlace: ${link}\n\nEl código vence en 1 hora. Si no lo pediste, ignorá este correo: tu contraseña no va a cambiar.`,
+    html: `<p>Alguien pidió restablecer la contraseña de tu cuenta de <strong>MICD</strong>.</p><p>Tu código de recuperación es:</p><p style="font-size:20px;font-weight:bold;font-family:monospace;letter-spacing:1px">${code}</p><p>En la app, abrí <strong>"¿Olvidaste tu contraseña?"</strong> e ingresá este código para elegir una contraseña nueva.</p><p>También podés abrir directamente este enlace: <a href="${link}">${link}</a></p><p>El código vence en 1 hora. Si no lo pediste, ignorá este correo: tu contraseña no va a cambiar.</p>`,
+  };
+}
+
+/** Send (or, with SMTP unset, log) a password-reset code for `email`. */
+export async function sendPasswordReset(
+  email: string,
+  code: string,
+  locale: MailLocale = "es",
+): Promise<void> {
+  const link = resetLink(code);
+  const tx = getTransporter();
+  if (!tx) {
+    console.log(
+      `[mailer] SMTP not configured — password reset code for ${email}: ${code} (link: ${link})`,
+    );
+    return;
+  }
+  const { subject, text, html } = resetTemplate(code, link, locale);
   await tx.sendMail({ from: smtpConfig.from, to: email, subject, text, html });
 }
