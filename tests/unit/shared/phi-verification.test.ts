@@ -71,7 +71,10 @@ describe("verifyInstanceTags", () => {
       ...tag({ "0010,0020": "30111222" }),
     });
     expect(findings).toEqual([
-      expect.objectContaining({ name: "PatientID", reason: "is not pseudonymized" }),
+      expect.objectContaining({
+        name: "PatientID",
+        reason: "is not pseudonymized",
+      }),
     ]);
   });
 
@@ -81,7 +84,10 @@ describe("verifyInstanceTags", () => {
       ...tag({ "0010,0020": "MRN-44182" }),
     });
     expect(findings).toEqual([
-      expect.objectContaining({ name: "PatientID", reason: "is not pseudonymized" }),
+      expect.objectContaining({
+        name: "PatientID",
+        reason: "is not pseudonymized",
+      }),
     ]);
   });
 
@@ -97,11 +103,13 @@ describe("verifyInstanceTags", () => {
 
   it("rejects a real birth date but accepts the placeholder years", () => {
     expect(
-      verifyInstanceTags({ ...ANONYMIZED, ...tag({ "0010,0030": "19750612" }) }).clean,
+      verifyInstanceTags({ ...ANONYMIZED, ...tag({ "0010,0030": "19750612" }) })
+        .clean,
     ).toBe(false);
     for (const value of ["", "00010101", "19000101"]) {
       expect(
-        verifyInstanceTags({ ...ANONYMIZED, ...tag({ "0010,0030": value }) }).clean,
+        verifyInstanceTags({ ...ANONYMIZED, ...tag({ "0010,0030": value }) })
+          .clean,
       ).toBe(true);
     }
   });
@@ -132,6 +140,43 @@ describe("verifyInstanceTags", () => {
       "0010,1001": { Value: [{ "0010,0010": { Value: "Pérez^María" } }] },
     });
     expect(clean).toBe(false);
+  });
+
+  it("every residual-PII finding is an error-severity finding", () => {
+    const { findings } = verifyInstanceTags(tag({ "0010,0010": "Pérez^José" }));
+    expect(findings.every((f) => f.severity === "error")).toBe(true);
+  });
+
+  it("warns on burned-in annotation but still passes (pixels unseen)", () => {
+    const { clean, findings } = verifyInstanceTags({
+      ...ANONYMIZED,
+      ...tag({ "0028,0301": "YES" }),
+    });
+    // A warning must not block an otherwise-anonymized instance.
+    expect(clean).toBe(true);
+    const warning = findings.find((f) => f.severity === "warning");
+    expect(warning?.name).toBe("BurnedInAnnotation");
+  });
+
+  it("warns on a risky modality (US/SC/XA) when no burned-in flag is set", () => {
+    const { clean, findings } = verifyInstanceTags({
+      ...ANONYMIZED,
+      ...tag({ "0008,0060": "US" }),
+    });
+    expect(clean).toBe(true);
+    expect(findings.find((f) => f.severity === "warning")?.name).toBe(
+      "Modality",
+    );
+  });
+
+  it("does not double-warn: burned-in takes precedence over modality", () => {
+    const { findings } = verifyInstanceTags({
+      ...ANONYMIZED,
+      ...tag({ "0028,0301": "YES", "0008,0060": "US" }),
+    });
+    const warnings = findings.filter((f) => f.severity === "warning");
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].name).toBe("BurnedInAnnotation");
   });
 });
 

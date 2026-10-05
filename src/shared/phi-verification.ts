@@ -79,10 +79,27 @@ const PATIENT_BIRTH_DATE = "0010,0030";
 /** PS3.15 De-identification attestation, set by the anonymizer. */
 const PATIENT_IDENTITY_REMOVED = "0012,0062";
 
+const BURNED_IN_ANNOTATION = "0028,0301";
+const MODALITY = "0008,0060";
+/**
+ * Modalities that routinely burn identifying text into the pixels (ultrasound,
+ * secondary capture, angiography). Pixel data is NOT inspected here (finding
+ * H1), so these raise a warning for a human to review, never a hard block.
+ */
+const RISKY_MODALITIES = new Set(["US", "SC", "XA"]);
+
+/**
+ * `error` findings are residual identifying tags — in strict mode they stop the
+ * study from being stored. `warning` findings (burned-in risk) never block on
+ * their own; they flag the study for review, since the check cannot see pixels.
+ */
+export type PhiSeverity = "error" | "warning";
+
 export interface PhiFinding {
   tag: string;
   name: string;
   reason: string;
+  severity: PhiSeverity;
 }
 
 export interface PhiVerificationResult {
@@ -123,7 +140,12 @@ export function verifyInstanceTags(
   for (const [tag, name] of MUST_BE_BLANK) {
     const value = tagValue(tags, tag);
     if (value !== "" && !isPlaceholder(value)) {
-      findings.push({ tag, name, reason: "carries a value" });
+      findings.push({
+        tag,
+        name,
+        reason: "carries a value",
+        severity: "error",
+      });
     }
   }
 
@@ -131,7 +153,12 @@ export function verifyInstanceTags(
     const value = tagValue(tags, tag);
     if (value === "" || isPlaceholder(value)) continue;
     if (HASH_LIKE.test(value) && HAS_HEX_LETTER.test(value)) continue;
-    findings.push({ tag, name, reason: "is not pseudonymized" });
+    findings.push({
+      tag,
+      name,
+      reason: "is not pseudonymized",
+      severity: "error",
+    });
   }
 
   const birthDate = tagValue(tags, PATIENT_BIRTH_DATE);
@@ -140,6 +167,7 @@ export function verifyInstanceTags(
       tag: PATIENT_BIRTH_DATE,
       name: "PatientBirthDate",
       reason: "is a real date",
+      severity: "error",
     });
   }
 
@@ -154,10 +182,33 @@ export function verifyInstanceTags(
         attestation === ""
           ? "is absent (the instance was never anonymized)"
           : `is "${attestation}", expected "YES"`,
+      severity: "error",
     });
   }
 
-  return { clean: findings.length === 0, findings };
+  // Burned-in text in the pixels can carry PHI this check cannot see (H1):
+  // flag it for review rather than blocking, and treat a few historically
+  // risky modalities the same way when the flag is absent.
+  if (tagValue(tags, BURNED_IN_ANNOTATION).toUpperCase() === "YES") {
+    findings.push({
+      tag: BURNED_IN_ANNOTATION,
+      name: "BurnedInAnnotation",
+      reason: "is YES (pixels may contain identifying text; not inspected)",
+      severity: "warning",
+    });
+  } else if (RISKY_MODALITIES.has(tagValue(tags, MODALITY).toUpperCase())) {
+    findings.push({
+      tag: MODALITY,
+      name: "Modality",
+      reason: "is prone to burned-in text; pixels are not inspected",
+      severity: "warning",
+    });
+  }
+
+  // "clean" governs storage/publication, so only hard (error) findings count;
+  // a warning means "store, but have a human look" — see the upload pipeline.
+  const clean = !findings.some((f) => f.severity === "error");
+  return { clean, findings };
 }
 
 /** One-line, PHI-free summary for an error message or an audit entry. */
