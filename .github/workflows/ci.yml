@@ -93,6 +93,7 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           files: ./coverage/lcov.info
-          # Non-blocking: a Codecov outage/TLS error must not fail a green test run.
+          # A Codecov upload/TLS outage must not fail the build — coverage is
+          # still gated by Codecov's status checks and the jest coverageThreshold.
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}

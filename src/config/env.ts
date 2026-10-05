@@ -199,6 +199,36 @@ export const uploadConfig = {
   ),
 };
 
+// ── Pre-storage PHI verification (TK-11) ──────────────────────────────────────
+// How the upload pipeline reacts when the independent tag check finds residual
+// PHI on an instance Orthanc just stored:
+//   strict (default) — reject it: delete it from Orthanc and store nothing.
+//   warn             — store it, but flag the study needs_review.
+// Validated here so a typo'd value fails startup loudly instead of silently
+// falling back to a weaker mode than the operator intended.
+export type AnonymizationVerifyMode = "strict" | "warn";
+
+function parseVerifyMode(raw: string | undefined): AnonymizationVerifyMode {
+  const mode = (raw ?? "strict").trim().toLowerCase();
+  if (mode !== "strict" && mode !== "warn") {
+    throw new Error(
+      `ANONYMIZATION_VERIFY_MODE must be "strict" or "warn", got "${raw}"`,
+    );
+  }
+  return mode;
+}
+
+// Fail fast at startup (this call runs on import, before app.listen).
+parseVerifyMode(process.env.ANONYMIZATION_VERIFY_MODE);
+
+export const anonymizationConfig = {
+  // Lazy getter so tests can set the mode at runtime; it re-validates on every
+  // read, so an invalid value can never slip through as a silent default.
+  get verifyMode(): AnonymizationVerifyMode {
+    return parseVerifyMode(process.env.ANONYMIZATION_VERIFY_MODE);
+  },
+};
+
 // ── Zenodo (ZEN-01) ──────────────────────────────────────────────────────────
 // Lazy getters (instead of values captured at import time) so unit tests can
 // set the variables at runtime, and so a missing ENCRYPTION_KEY only fails when

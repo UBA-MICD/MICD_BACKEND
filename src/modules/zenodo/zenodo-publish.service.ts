@@ -3,6 +3,10 @@ import { zenodoClient } from "../../clients/zenodo.client";
 import { orthancClient } from "../../clients/orthanc.client";
 import { type ZenodoEnvironment, getStoredToken } from "./zenodo.service";
 import { AUDIT_ACTIONS, logAction, logActionWithClient } from "../../shared/audit";
+import {
+  describeFindings,
+  verifyInstanceTags,
+} from "../../shared/phi-verification";
 import { throttle, FIFTY_GB } from "./zenodo-rate-limit.service";
 
 export interface ZenodoAuthor {
@@ -118,6 +122,45 @@ async function fetchOrthancFile(instanceId: string): Promise<Buffer> {
   return Buffer.from(data);
 }
 
+/**
+ * Refuse to publish unless the stored instances themselves are free of
+ * identifying tags.
+ *
+ * `anonymized_at` only records that anonymization was *believed* to have
+ * happened — nothing stops it being set by hand, and it says nothing about the
+ * bytes currently in Orthanc. A Zenodo DOI is permanent and public, so this
+ * path reads the data instead of trusting the column. It runs on every route
+ * that can reach `publishDeposition`, including the retry path.
+ *
+ * Fails closed: if Orthanc cannot be reached, publication is refused.
+ */
+async function assertInstancesAreAnonymized(
+  instanceIds: string[],
+): Promise<void> {
+  for (const instanceId of instanceIds) {
+    let tags: Record<string, unknown>;
+    try {
+      const { data } = await orthancClient.getInstanceTags(instanceId);
+      tags = data;
+    } catch {
+      throw new ZenodoPublishError(
+        `No se pudieron leer los tags de la instancia ${instanceId} para verificar la anonimización`,
+        "verification_unavailable",
+      );
+    }
+
+    const { clean, findings } = verifyInstanceTags(tags);
+    if (!clean) {
+      // describeFindings reports tag names and why they failed, never values,
+      // so this message is safe to log and to return to the client.
+      throw new ZenodoPublishError(
+        `La instancia ${instanceId} conserva datos identificatorios: ${describeFindings(findings)}`,
+        "phi_detected",
+      );
+    }
+  }
+}
+
 export async function getDeposition(depositionId: number): Promise<DepositionRow | null> {
   const { rows } = await pool.query<DepositionRow>(
     "SELECT * FROM zenodo_depositions WHERE id = $1",
@@ -182,6 +225,11 @@ export async function publishStudy(opts: PublishStudyOptions): Promise<PublishSt
 
   // Collect instance IDs and check total size
   const instanceIds = studyRows.map((r) => r.orthanc_instance_id);
+
+  // The flag above says anonymization was recorded; this says the bytes about
+  // to become a public DOI actually carry no identifying tags.
+  await assertInstancesAreAnonymized(instanceIds);
+
   let totalSize = 0;
   const fileSizes: Map<string, number> = new Map();
 
@@ -354,6 +402,16 @@ export async function retryFailedFiles(
       "no_credentials",
     );
   }
+
+  // Re-verify before re-uploading: this path also reaches publishDeposition,
+  // and the stored instances may have changed since the deposition was created.
+  const { rows: allFiles } = await pool.query<FileRow>(
+    "SELECT orthanc_instance_id FROM zenodo_deposition_files WHERE deposition_id=$1",
+    [depositionId],
+  );
+  await assertInstancesAreAnonymized(
+    allFiles.map((f) => f.orthanc_instance_id),
+  );
 
   const { rows: failedFiles } = await pool.query<FileRow>(
     "SELECT * FROM zenodo_deposition_files WHERE deposition_id=$1 AND status='failed' ORDER BY id",
