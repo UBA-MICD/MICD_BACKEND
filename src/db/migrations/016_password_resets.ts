@@ -7,7 +7,7 @@
  * the previous. `created_at` also drives the per-account resend cooldown.
  */
 export const migration015 = {
-  id: "015_password_resets",
+  id: "016_password_resets",
   sql: `
     CREATE TABLE IF NOT EXISTS password_resets (
       id          SERIAL PRIMARY KEY,
