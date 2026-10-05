@@ -12,8 +12,10 @@
  *  - Only the top-level tags listed below are inspected. Nested sequences are
  *    not walked (the anonymization profile removes them), and private tags are
  *    not enumerated.
- *  - **Pixel data is not inspected at all.** Burned-in annotation survives this
- *    check untouched — see finding H1 in ANONYMIZATION_SECURITY_REVIEW.md.
+ *  - **Pixel data is not inspected at all.** Burned-in annotation is not
+ *    detected by content — see finding H1 in ANONYMIZATION_SECURITY_REVIEW.md.
+ *    It is only *flagged* (a warning finding) when the `BurnedInAnnotation` tag
+ *    says YES or the modality is one that commonly burns text in; no OCR.
  *
  * The expectations match the profile the project actually uses
  * (Imagenes-medicas-anonimizacion: DICOM PS3.15 Annex E plus a second pass):
