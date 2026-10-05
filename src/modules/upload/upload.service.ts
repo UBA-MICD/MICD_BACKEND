@@ -6,6 +6,7 @@ import {
   verifyInstanceTags,
 } from "../../shared/phi-verification";
 import * as repo from "./upload.repository";
+import { pathologyExists } from "../pathologies/pathologies.service";
 
 // Same ceiling multer enforces while streaming (see upload.middleware.ts);
 // re-checked here as defense in depth for callers that bypass the middleware.
@@ -55,6 +56,7 @@ export interface UploadResult {
 export async function uploadDicom(
   file: { buffer: Buffer; size: number },
   force: boolean,
+  classificationId: number | null = null,
 ): Promise<UploadResult> {
   // 413 — file too large
   if (file.size > MAX_FILE_SIZE) {
@@ -63,7 +65,13 @@ export async function uploadDicom(
     });
   }
 
-  const stored = await storeInstance(file.buffer, force);
+  // Reject an unknown category up front, before touching Orthanc. Free text is
+  // impossible — classification_id is an integer validated against the catalog.
+  if (classificationId !== null && !(await pathologyExists(classificationId))) {
+    throw new HttpError(400, { error: "Unknown classification_id" });
+  }
+
+  const stored = await storeInstance(file.buffer, force, classificationId);
   return { study: stored.study, orthanc: stored.orthanc };
 }
 
@@ -79,6 +87,7 @@ interface StoredInstance {
 async function storeInstance(
   buffer: Buffer,
   force: boolean,
+  classificationId: number | null,
 ): Promise<StoredInstance> {
   let orthancData: any;
   try {
@@ -176,6 +185,7 @@ async function storeInstance(
       rows,
       cols,
       anonymizedAt: verification.clean ? new Date() : null,
+      classificationId,
     });
   } catch (err: any) {
     throw new HttpError(500, {

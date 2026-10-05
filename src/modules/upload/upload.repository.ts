@@ -21,6 +21,7 @@ export interface StudyMetadata {
    * read back — never from a caller's assertion (see shared/phi-verification).
    */
   anonymizedAt: Date | null;
+  classificationId: number | null;
 }
 
 /** Look up an existing row by its unique SOP Instance UID. */
@@ -50,8 +51,8 @@ export async function upsertStudy(m: StudyMetadata): Promise<any> {
        (orthanc_study_id, orthanc_instance_id, sop_instance_uid, study_instance_uid,
         patient_name, patient_id, study_date, modality, study_description,
         series_description, number_of_images,
-        instance_number, rows_count, cols_count, anonymized_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+        instance_number, rows_count, cols_count, anonymized_at, classification_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
      ON CONFLICT (sop_instance_uid) DO UPDATE SET
        orthanc_study_id    = EXCLUDED.orthanc_study_id,
        orthanc_instance_id = EXCLUDED.orthanc_instance_id,
@@ -67,6 +68,7 @@ export async function upsertStudy(m: StudyMetadata): Promise<any> {
        rows_count          = EXCLUDED.rows_count,
        cols_count          = EXCLUDED.cols_count,
        anonymized_at       = EXCLUDED.anonymized_at,
+       classification_id   = EXCLUDED.classification_id,
        uploaded_at         = NOW()
      RETURNING *`,
     [
@@ -85,6 +87,7 @@ export async function upsertStudy(m: StudyMetadata): Promise<any> {
       m.rows,
       m.cols,
       m.anonymizedAt,
+      m.classificationId,
     ],
   );
   return rows[0];
