@@ -766,7 +766,7 @@ export const openapiSpec = {
           email: { type: "string", format: "email" },
           role: {
             type: "string",
-            enum: ["admin", "medico", "investigador"],
+            enum: ["admin", "medico", "investigador", "informatico"],
             description: "RBAC role driving per-endpoint authorization.",
           },
         },

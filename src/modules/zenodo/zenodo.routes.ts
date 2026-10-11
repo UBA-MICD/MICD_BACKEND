@@ -1,6 +1,5 @@
 import { Router } from "express";
 import { requireAuth, requireRole } from "../../middleware/auth.middleware";
-import { ROLES } from "../../shared/roles";
 import * as ctrl from "./zenodo.controller";
 
 /**
@@ -11,14 +10,14 @@ import * as ctrl from "./zenodo.controller";
  *   - Credential + sync configuration and publication are admin-only (they hold
  *     secrets or are irreversible and outward-facing).
  *   - Operational reads, import, and quota are open to clinical staff.
- *   - Public-corpus search/resolve is open to all three roles — it queries
+ *   - Public-corpus search/resolve is open to admin, medico and investigador — it queries
  *     Zenodo's own public data and exposes no local PHI.
  */
 export const zenodoRouter = Router();
 
 const ADMIN = [requireAuth, requireRole("admin")];
 const STAFF = [requireAuth, requireRole("admin", "medico")];
-const ALL = [requireAuth, requireRole(...ROLES)];
+const ALL = [requireAuth, requireRole("admin", "medico", "investigador")];
 
 // ── Credentials configuration (ZEN-01) — admin ────────────────────────────────
 zenodoRouter.post("/config", ...ADMIN, ctrl.configureToken);
