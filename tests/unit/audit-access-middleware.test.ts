@@ -1,7 +1,10 @@
 import { Request, Response } from "express";
 import { EventEmitter } from "events";
 import { pool } from "../../src/db/pool";
-import { auditStudyAccess } from "../../src/middleware/audit-access.middleware";
+import {
+  auditStudyAccess,
+  auditUploadFailure,
+} from "../../src/middleware/audit-access.middleware";
 import { AUDIT_ACTIONS } from "../../src/shared/audit";
 
 jest.mock("../../src/db/pool", () => ({ pool: { query: jest.fn() } }));
@@ -107,5 +110,73 @@ describe("auditStudyAccess", () => {
       "203.0.113.7",
       null,
     ]);
+  });
+
+  it("logs the failure action with the status when one is given", async () => {
+    poolQuery.mockResolvedValueOnce({ rows: [] });
+    const req = makeReq({ studyId: "missing" }, { sub: 42 });
+    const res = makeRes(404);
+
+    auditStudyAccess(
+      AUDIT_ACTIONS.STUDY_DOWNLOADED,
+      "studyId",
+      AUDIT_ACTIONS.STUDY_DOWNLOAD_FAILED,
+    )(req, res, jest.fn());
+    (res as unknown as EventEmitter).emit("finish");
+    await Promise.resolve();
+
+    expect(poolQuery).toHaveBeenCalledWith(expect.any(String), [
+      42,
+      "STUDY_DOWNLOAD_FAILED",
+      "missing",
+      "203.0.113.7",
+      JSON.stringify({ status: 404 }),
+    ]);
+  });
+
+  it("does not log a rate-limited (429) response even with a failure action", async () => {
+    const req = makeReq({ studyId: "s1" }, { sub: 42 });
+    const res = makeRes(429);
+
+    auditStudyAccess(
+      AUDIT_ACTIONS.STUDY_DOWNLOADED,
+      "studyId",
+      AUDIT_ACTIONS.STUDY_DOWNLOAD_FAILED,
+    )(req, res, jest.fn());
+    (res as unknown as EventEmitter).emit("finish");
+    await Promise.resolve();
+
+    expect(poolQuery).not.toHaveBeenCalled();
+  });
+});
+
+describe("auditUploadFailure", () => {
+  it.each([400, 409, 413, 500])("logs STUDY_UPLOAD_FAILED on %i", async (status) => {
+    poolQuery.mockResolvedValueOnce({ rows: [] });
+    const req = makeReq({}, { sub: 5 });
+    const res = makeRes(status);
+    const next = jest.fn();
+
+    auditUploadFailure(req, res, next);
+    expect(next).toHaveBeenCalledTimes(1);
+    (res as unknown as EventEmitter).emit("finish");
+    await Promise.resolve();
+
+    expect(poolQuery).toHaveBeenCalledWith(expect.any(String), [
+      5,
+      "STUDY_UPLOAD_FAILED",
+      "unknown",
+      "203.0.113.7",
+      JSON.stringify({ status }),
+    ]);
+  });
+
+  it.each([201, 429])("does not log on %i", async (status) => {
+    const res = makeRes(status);
+    auditUploadFailure(makeReq({}, { sub: 5 }), res, jest.fn());
+    (res as unknown as EventEmitter).emit("finish");
+    await Promise.resolve();
+
+    expect(poolQuery).not.toHaveBeenCalled();
   });
 });

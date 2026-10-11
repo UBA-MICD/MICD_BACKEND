@@ -11,7 +11,12 @@
  * - `investigador` — read-only, PHI-free; no writes, no external publication.
  * - `informatico`  — clinic IT staff: upload and download DICOM only.
  */
-export const ROLES = ["admin", "medico", "investigador", "informatico"] as const;
+export const ROLES = [
+  "admin",
+  "medico",
+  "investigador",
+  "informatico",
+] as const;
 
 export type Role = (typeof ROLES)[number];
 

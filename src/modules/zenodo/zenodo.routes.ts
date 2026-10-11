@@ -10,14 +10,15 @@ import * as ctrl from "./zenodo.controller";
  *   - Credential + sync configuration and publication are admin-only (they hold
  *     secrets or are irreversible and outward-facing).
  *   - Operational reads, import, and quota are open to clinical staff.
- *   - Public-corpus search/resolve is open to admin, medico and investigador — it queries
- *     Zenodo's own public data and exposes no local PHI.
+ *   - Public-corpus search/resolve is open to admin, medico and investigador
+ *     (not informatico) — it queries Zenodo's own public data and exposes no
+ *     local PHI.
  */
 export const zenodoRouter = Router();
 
 const ADMIN = [requireAuth, requireRole("admin")];
 const STAFF = [requireAuth, requireRole("admin", "medico")];
-const ALL = [requireAuth, requireRole("admin", "medico", "investigador")];
+const VIEWERS = [requireAuth, requireRole("admin", "medico", "investigador")];
 
 // ── Credentials configuration (ZEN-01) — admin ────────────────────────────────
 zenodoRouter.post("/config", ...ADMIN, ctrl.configureToken);
@@ -28,8 +29,8 @@ zenodoRouter.get("/config/status", ...STAFF, ctrl.getConfigStatus);
 zenodoRouter.get("/health", ...STAFF, ctrl.getHealth);
 
 // ── Search (ZEN-06) — public Zenodo corpus, no local PHI ─────────────────────
-zenodoRouter.get("/search", ...ALL, ctrl.search);
-zenodoRouter.get("/records/:recordId", ...ALL, ctrl.getRecordDetail);
+zenodoRouter.get("/search", ...VIEWERS, ctrl.search);
+zenodoRouter.get("/records/:recordId", ...VIEWERS, ctrl.getRecordDetail);
 
 // ── Periodic metadata sync (ZEN-10) ──────────────────────────────────────────
 zenodoRouter.get("/config/sync", ...ADMIN, ctrl.getSyncConfiguration);
@@ -41,7 +42,7 @@ zenodoRouter.get("/config/sync/status", ...STAFF, ctrl.getSyncStatusHandler);
 // ── Import (ZEN-07) — clinical staff ─────────────────────────────────────────
 zenodoRouter.post("/import", ...STAFF, ctrl.importRecord);
 zenodoRouter.get("/imports/:importId", ...STAFF, ctrl.getImportStatus);
-zenodoRouter.get("/resolve", ...ALL, ctrl.resolveRecord);
+zenodoRouter.get("/resolve", ...VIEWERS, ctrl.resolveRecord);
 
 // ── Quota & rate limit (ZEN-17) ──────────────────────────────────────────────
 zenodoRouter.get("/quota", ...STAFF, ctrl.getQuota);

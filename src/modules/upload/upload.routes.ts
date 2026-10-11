@@ -2,6 +2,7 @@ import { Router } from "express";
 import { requireAuth, requireRole } from "../../middleware/auth.middleware";
 import { uploadSingleFile } from "../../middleware/upload.middleware";
 import { uploadRateLimiter } from "../../middleware/rate-limit.middleware";
+import { auditUploadFailure } from "../../middleware/audit-access.middleware";
 import { uploadStudy } from "./upload.controller";
 
 /**
@@ -10,11 +11,17 @@ import { uploadStudy } from "./upload.controller";
  * instances uploaded either way appear in the explorer.
  *
  * Ingest is a write, so it is limited to clinical staff (admin + medico) and
- * clinic IT (informatico); investigador is read-only. DICOM is anonymized client-side before upload.
+ * clinic IT (informatico); investigador is read-only. DICOM is anonymized
+ * client-side before upload. Failed uploads are audited as
+ * STUDY_UPLOAD_FAILED; successes are audited by the controller.
  */
 export const uploadRouter = Router();
 
-const UPLOADERS = [requireAuth, requireRole("admin", "medico", "informatico")];
+const UPLOADERS = [
+  requireAuth,
+  requireRole("admin", "medico", "informatico"),
+  auditUploadFailure,
+];
 
 uploadRouter.post(
   "/api/v1/studies/upload",

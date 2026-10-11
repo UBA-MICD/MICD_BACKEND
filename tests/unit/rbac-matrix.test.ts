@@ -61,7 +61,11 @@ const studies: Expected[] = [
   { method: "get", path: "/api/studies/:id", roles: VIEW },
   { method: "delete", path: "/api/studies/:id", roles: ADMIN },
   { method: "get", path: "/api/v1/studies/:studyId/file", roles: DOWNLOAD },
-  { method: "get", path: "/api/v1/studies/:studyId/instances", roles: DOWNLOAD },
+  {
+    method: "get",
+    path: "/api/v1/studies/:studyId/instances",
+    roles: DOWNLOAD,
+  },
   {
     method: "get",
     path: "/api/v1/studies/:studyId/instances/:instanceId/file",
@@ -129,9 +133,21 @@ const segmentation: Expected[] = [
   { method: "post", path: "/segmentation", roles: VIEW },
   { method: "get", path: "/segmentation", roles: VIEW },
   { method: "get", path: "/segmentation/:id/corrections", roles: VIEW },
-  { method: "post", path: "/segmentation/:id/corrections", roles: ["medico", "admin"] },
-  { method: "post", path: "/segmentation/:id/accept", roles: ["medico", "admin"] },
-  { method: "post", path: "/segmentation/:id/discard", roles: ["medico", "admin"] },
+  {
+    method: "post",
+    path: "/segmentation/:id/corrections",
+    roles: ["medico", "admin"],
+  },
+  {
+    method: "post",
+    path: "/segmentation/:id/accept",
+    roles: ["medico", "admin"],
+  },
+  {
+    method: "post",
+    path: "/segmentation/:id/discard",
+    roles: ["medico", "admin"],
+  },
 ];
 
 const pathologies: Expected[] = [{ method: "get", path: "/", roles: ALL }];

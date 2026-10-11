@@ -13,15 +13,16 @@ import * as mlCtrl from "./ml.controller";
  *   - current `/api/v1/studies*` — Postgres-backed, paginated/filtered
  *
  * Every route requires a valid token (requireAuth) plus a permitted role
- * (requireRole). Reads are open to admin, medico and investigador — investigador sees the same
- * studies with PHI redacted (metadata) or anonymized (files); deletes are
- * admin-only; the outward-facing Zenodo publish-check excludes investigador.
- * informatico (clinic IT) only gets the list and file-download routes it needs
- * to find and fetch a study (DOWNLOAD).
+ * (requireRole). Reads are open to admin, medico and investigador —
+ * investigador sees the same studies with PHI redacted (metadata) or
+ * anonymized (files); deletes are admin-only; the outward-facing Zenodo
+ * publish-check excludes investigador. informatico (clinic IT) only gets the
+ * list and file-download routes it needs to find and fetch a study (DOWNLOAD).
  *
  * View/download/delete routes also carry `auditStudyAccess` (TK-06): every
  * successful access is appended to `audit_log` with user, action, study id,
- * timestamp and IP, for the medical-data access trail.
+ * timestamp and IP, for the medical-data access trail. Failed downloads are
+ * logged too, as STUDY_DOWNLOAD_FAILED.
  */
 export const studiesRouter = Router();
 
@@ -61,7 +62,11 @@ studiesRouter.delete(
 studiesRouter.get(
   "/api/v1/studies/:studyId/file",
   ...DOWNLOAD,
-  auditStudyAccess(AUDIT_ACTIONS.STUDY_DOWNLOADED),
+  auditStudyAccess(
+    AUDIT_ACTIONS.STUDY_DOWNLOADED,
+    "studyId",
+    AUDIT_ACTIONS.STUDY_DOWNLOAD_FAILED,
+  ),
   ctrl.getStudyFile,
 );
 studiesRouter.get(
@@ -73,7 +78,11 @@ studiesRouter.get(
 studiesRouter.get(
   "/api/v1/studies/:studyId/instances/:instanceId/file",
   ...DOWNLOAD,
-  auditStudyAccess(AUDIT_ACTIONS.STUDY_DOWNLOADED),
+  auditStudyAccess(
+    AUDIT_ACTIONS.STUDY_DOWNLOADED,
+    "studyId",
+    AUDIT_ACTIONS.STUDY_DOWNLOAD_FAILED,
+  ),
   ctrl.getInstanceFile,
 );
 studiesRouter.get(

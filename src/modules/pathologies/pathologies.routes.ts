@@ -10,4 +10,9 @@ import { listPathologies } from "./pathologies.controller";
  */
 export const pathologiesRouter = Router();
 
-pathologiesRouter.get("/", requireAuth, requireRole("admin", "medico", "investigador", "informatico"), listPathologies);
+pathologiesRouter.get(
+  "/",
+  requireAuth,
+  requireRole("admin", "medico", "investigador", "informatico"),
+  listPathologies,
+);
