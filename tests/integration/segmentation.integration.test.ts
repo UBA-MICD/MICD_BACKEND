@@ -1,14 +1,20 @@
 /**
- * Integration tests for AI segmentation correction endpoints (US-45):
- *   POST /api/v1/ml/segmentation                      (persists a candidate)
+ * Integration tests for AI segmentation endpoints (US-41 / US-45):
+ *   POST /api/v1/ml/segmentation                      (input validation, TK-44)
  *   POST /api/v1/ml/segmentation/:id/corrections      (append-only correction)
  *   GET  /api/v1/ml/segmentation/:id/corrections      (candidate + chain)
  *   POST /api/v1/ml/segmentation/:id/accept | /discard
  *
  * Requires a running backend + DB. Run: npm run test:integration
+ *
+ * The correction tests seed their candidate straight into the DB: since TK-44
+ * POST /segmentation runs the real inference service on a stored image, which
+ * this stack doesn't have, and corrections only need an existing candidate.
  */
 import axios from "axios";
+import { Client } from "pg";
 import { getAuthHeaderFor } from "../helpers/auth";
+import { dbConfig } from "../../src/config/env";
 
 const BASE_URL = process.env.BACKEND_URL ?? "http://localhost:3000";
 
@@ -21,20 +27,28 @@ let investigadorHeader: { Authorization: string };
 const MASK_SHAPE: [number, number] = [4, 4];
 const CORRECTED_RLE = [5, 6, 5];
 
-/** Create a fresh persisted candidate and return its id. */
-async function newCandidate(
-  header: { Authorization: string } = staffHeader,
-): Promise<number> {
-  const { data } = await axios.post(
-    `${BASE_URL}/api/v1/ml/segmentation`,
-    {
-      columns: 4,
-      rows: 4,
-      sopInstanceUid: `test.us45.${Date.now()}.${Math.random()}`,
-    },
-    { headers: header },
-  );
-  return data.segmentationId as number;
+/** Insert a fresh candidate (as the seeded test user) and return its id. */
+async function newCandidate(): Promise<number> {
+  const client = new Client(dbConfig);
+  await client.connect();
+  try {
+    const { rows } = await client.query<{ id: number }>(
+      `INSERT INTO ml_segmentations
+         (instance_id, model_id, mask_rle, mask_shape, status, created_by)
+       VALUES ($1, 'mock-sam3', $2::jsonb, $3::jsonb, 'candidate',
+               (SELECT id FROM users WHERE email = $4))
+       RETURNING id`,
+      [
+        `test.us45.${Date.now()}.${Math.random()}`,
+        JSON.stringify([16]),
+        JSON.stringify(MASK_SHAPE),
+        process.env.TEST_USER_EMAIL ?? "test@micd.local",
+      ],
+    );
+    return rows[0].id;
+  } finally {
+    await client.end();
+  }
 }
 
 beforeAll(async () => {
@@ -55,22 +69,27 @@ beforeAll(async () => {
 
 // ── candidate persistence ─────────────────────────────────────────────────────
 
-describe("POST /api/v1/ml/segmentation persists a candidate", () => {
-  it("201 — returns a segmentationId when a source UID is supplied", async () => {
+describe("POST /api/v1/ml/segmentation (TK-44)", () => {
+  it("422 — a local-disk image (no source UID) can't be segmented", async () => {
     if (!backendAvailable) return;
-    const id = await newCandidate();
-    expect(typeof id).toBe("number");
-    expect(id).toBeGreaterThan(0);
+    await expect(
+      axios.post(
+        `${BASE_URL}/api/v1/ml/segmentation`,
+        { columns: 4, rows: 4 },
+        { headers: staffHeader },
+      ),
+    ).rejects.toMatchObject({ response: { status: 422 } });
   });
 
-  it("segmentationId is null for a local-disk image (no source UID)", async () => {
+  it("404 — an instance that isn't stored on the server", async () => {
     if (!backendAvailable) return;
-    const { data } = await axios.post(
-      `${BASE_URL}/api/v1/ml/segmentation`,
-      { columns: 4, rows: 4 },
-      { headers: staffHeader },
-    );
-    expect(data.segmentationId).toBeNull();
+    await expect(
+      axios.post(
+        `${BASE_URL}/api/v1/ml/segmentation`,
+        { sopInstanceUid: `test.tk44.missing.${Date.now()}` },
+        { headers: staffHeader },
+      ),
+    ).rejects.toMatchObject({ response: { status: 404 } });
   });
 });
 

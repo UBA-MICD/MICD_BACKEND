@@ -79,6 +79,16 @@ export const orthancConfig = {
   auth: { username: orthancUsername, password: orthancPassword },
 };
 
+// The Python inference service (MICD_TRAINING, US-41). Reachable only from this
+// backend over the Docker `micd` network; never exposed to the browser.
+export const inferenceConfig = {
+  url: (process.env.AI_INFERENCE_URL ?? "http://micd-inference:8000").replace(
+    /\/+$/,
+    "",
+  ),
+  timeoutMs: parseInt(process.env.AI_INFERENCE_TIMEOUT_MS ?? "30000", 10),
+};
+
 export const jwtConfig = {
   accessSecret: process.env.JWT_SECRET ?? "change-me-access-secret",
   refreshSecret: process.env.JWT_REFRESH_SECRET ?? "change-me-refresh-secret",

@@ -135,6 +135,17 @@ const SEG_SELECT = `
   LEFT JOIN users ru ON ru.id = s.reviewed_by
 `;
 
+/** Orthanc's id for a stored instance, by its DICOM SOP Instance UID. */
+export async function findOrthancInstanceId(
+  sopInstanceUid: string,
+): Promise<string | null> {
+  const { rows } = await pool.query<{ orthanc_instance_id: string }>(
+    "SELECT orthanc_instance_id FROM studies WHERE sop_instance_uid = $1 LIMIT 1",
+    [sopInstanceUid],
+  );
+  return rows[0]?.orthanc_instance_id ?? null;
+}
+
 export async function insertSegmentation(params: {
   studyId?: string | null;
   instanceId: string;
