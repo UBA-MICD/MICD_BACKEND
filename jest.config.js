@@ -13,4 +13,18 @@ module.exports = {
   transform: {
     "^.+\\.tsx?$": ["ts-jest", { tsconfig: "tsconfig.jest.json" }],
   },
+  // TK-11: keep the independent PHI check and the ingest gate well covered, so
+  // a regression that stops verifying (or stops blocking) fails CI. Scoped to
+  // these files rather than the whole repo, which has no global bar yet.
+  coverageThreshold: {
+    "src/shared/phi-verification.ts": {
+      lines: 80,
+      branches: 80,
+      functions: 80,
+    },
+    "src/modules/upload/upload.service.ts": {
+      lines: 80,
+      branches: 80,
+    },
+  },
 };

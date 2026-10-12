@@ -12,9 +12,14 @@ import { studiesRouter } from "../../src/modules/studies/studies.routes";
 import { uploadRouter } from "../../src/modules/upload/upload.routes";
 import activityRouter from "../../src/modules/activity/activity.routes";
 import { zenodoRouter } from "../../src/modules/zenodo/zenodo.routes";
+import { segmentationRouter } from "../../src/modules/segmentation/segmentation.routes";
+import { pathologiesRouter } from "../../src/modules/pathologies/pathologies.routes";
 import { ROLES, Role } from "../../src/shared/roles";
 
 const ALL = [...ROLES];
+const VIEW: Role[] = ["admin", "medico", "investigador"];
+const DOWNLOAD: Role[] = ["admin", "medico", "investigador", "informatico"];
+const UPLOADERS: Role[] = ["admin", "medico", "informatico"];
 const STAFF: Role[] = ["admin", "medico"];
 const ADMIN: Role[] = ["admin"];
 
@@ -52,35 +57,50 @@ function gatedRouteCount(router: Router): number {
 }
 
 const studies: Expected[] = [
-  { method: "get", path: "/api/studies", roles: ALL },
-  { method: "get", path: "/api/studies/:id", roles: ALL },
+  { method: "get", path: "/api/studies", roles: VIEW },
+  { method: "get", path: "/api/studies/:id", roles: VIEW },
   { method: "delete", path: "/api/studies/:id", roles: ADMIN },
-  { method: "get", path: "/api/v1/studies/:studyId/file", roles: ALL },
-  { method: "get", path: "/api/v1/studies/:studyId/instances", roles: ALL },
+  { method: "get", path: "/api/v1/studies/:studyId/file", roles: DOWNLOAD },
+  {
+    method: "get",
+    path: "/api/v1/studies/:studyId/instances",
+    roles: DOWNLOAD,
+  },
   {
     method: "get",
     path: "/api/v1/studies/:studyId/instances/:instanceId/file",
-    roles: ALL,
+    roles: DOWNLOAD,
   },
-  { method: "get", path: "/api/v1/studies", roles: ALL },
-  { method: "get", path: "/api/v1/studies/:studyId/zenodo", roles: ALL },
+  { method: "get", path: "/api/v1/studies", roles: DOWNLOAD },
+  { method: "get", path: "/api/v1/studies/:studyId/zenodo", roles: VIEW },
   {
     method: "post",
     path: "/api/v1/studies/:studyId/zenodo/check",
     roles: STAFF,
   },
-  { method: "get", path: "/api/v1/studies/:studyId/thumbnail", roles: ALL },
+  { method: "get", path: "/api/v1/studies/:studyId/thumbnail", roles: VIEW },
+  { method: "get", path: "/api/v1/studies/:studyId/validation", roles: VIEW },
   { method: "post", path: "/api/v1/studies/:studyId/validate", roles: STAFF },
   {
     method: "post",
     path: "/api/v1/studies/:studyId/validation-correction",
     roles: ADMIN,
   },
+  {
+    method: "post",
+    path: "/api/v1/studies/:studyId/ml/analyze",
+    roles: ADMIN,
+  },
+  {
+    method: "get",
+    path: "/api/v1/studies/:studyId/ml/prediction",
+    roles: VIEW,
+  },
 ];
 
 const upload: Expected[] = [
-  { method: "post", path: "/api/v1/studies/upload", roles: STAFF },
-  { method: "post", path: "/api/instances", roles: STAFF },
+  { method: "post", path: "/api/v1/studies/upload", roles: UPLOADERS },
+  { method: "post", path: "/api/instances", roles: UPLOADERS },
 ];
 
 const activity: Expected[] = [
@@ -93,8 +113,8 @@ const zenodo: Expected[] = [
   { method: "delete", path: "/config/:environment", roles: ADMIN },
   { method: "get", path: "/config/status", roles: STAFF },
   { method: "get", path: "/health", roles: STAFF },
-  { method: "get", path: "/search", roles: ALL },
-  { method: "get", path: "/records/:recordId", roles: ALL },
+  { method: "get", path: "/search", roles: VIEW },
+  { method: "get", path: "/records/:recordId", roles: VIEW },
   { method: "get", path: "/config/sync", roles: ADMIN },
   { method: "put", path: "/config/sync", roles: ADMIN },
   { method: "post", path: "/config/sync/run", roles: ADMIN },
@@ -102,18 +122,43 @@ const zenodo: Expected[] = [
   { method: "get", path: "/config/sync/status", roles: STAFF },
   { method: "post", path: "/import", roles: STAFF },
   { method: "get", path: "/imports/:importId", roles: STAFF },
-  { method: "get", path: "/resolve", roles: ALL },
+  { method: "get", path: "/resolve", roles: VIEW },
   { method: "get", path: "/quota", roles: STAFF },
   { method: "post", path: "/publish", roles: ADMIN },
   { method: "get", path: "/depositions/:depositionId", roles: ADMIN },
   { method: "post", path: "/depositions/:depositionId/retry", roles: ADMIN },
 ];
 
+const segmentation: Expected[] = [
+  { method: "post", path: "/segmentation", roles: VIEW },
+  { method: "get", path: "/segmentation", roles: VIEW },
+  { method: "get", path: "/segmentation/:id/corrections", roles: VIEW },
+  {
+    method: "post",
+    path: "/segmentation/:id/corrections",
+    roles: ["medico", "admin"],
+  },
+  {
+    method: "post",
+    path: "/segmentation/:id/accept",
+    roles: ["medico", "admin"],
+  },
+  {
+    method: "post",
+    path: "/segmentation/:id/discard",
+    roles: ["medico", "admin"],
+  },
+];
+
+const pathologies: Expected[] = [{ method: "get", path: "/", roles: ALL }];
+
 const suites: Array<[string, Router, Expected[]]> = [
   ["studies", studiesRouter, studies],
   ["upload", uploadRouter, upload],
   ["activity", activityRouter, activity],
   ["zenodo", zenodoRouter, zenodo],
+  ["segmentation", segmentationRouter, segmentation],
+  ["pathologies", pathologiesRouter, pathologies],
 ];
 
 describe("RBAC route matrix", () => {
@@ -129,8 +174,29 @@ describe("RBAC route matrix", () => {
     });
   }
 
-  it("gates 34 authenticated endpoints in total", () => {
+  it("gates 44 authenticated endpoints in total", () => {
     const total = suites.reduce((sum, [, r]) => sum + gatedRouteCount(r), 0);
-    expect(total).toBe(34);
+    expect(total).toBe(44);
+  });
+
+  it("informatico reaches only upload, study list/download and the pathology catalog", () => {
+    const allowed = suites.flatMap(([name, router, expected]) =>
+      expected
+        .filter(({ method, path }) =>
+          guardRolesFor(router, method, path)?.includes("informatico"),
+        )
+        .map(({ method, path }) => `${name} ${method} ${path}`),
+    );
+    expect(allowed.sort()).toEqual(
+      [
+        "pathologies get /",
+        "studies get /api/v1/studies",
+        "studies get /api/v1/studies/:studyId/file",
+        "studies get /api/v1/studies/:studyId/instances",
+        "studies get /api/v1/studies/:studyId/instances/:instanceId/file",
+        "upload post /api/instances",
+        "upload post /api/v1/studies/upload",
+      ].sort(),
+    );
   });
 });

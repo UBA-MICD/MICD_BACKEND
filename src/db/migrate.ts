@@ -9,6 +9,12 @@ import { migration007 } from "./migrations/007_user_invites";
 import { migration008 } from "./migrations/008_audit_append_only";
 import { migration009 } from "./migrations/009_study_description_index";
 import { migration010 } from "./migrations/010_validations";
+import { migration011 } from "./migrations/011_ml_predictions";
+import { migration012 } from "./migrations/012_study_metadata";
+import { migration013 } from "./migrations/013_segmentations";
+import { migration014 } from "./migrations/014_pathologies";
+import { migration015 } from "./migrations/015_anonymization_review";
+import { migration016 } from "./migrations/016_password_resets";
 
 /**
  * A single migration statement. Either raw SQL (may contain several
@@ -42,6 +48,12 @@ const migrations: Migration[] = [
   migration008,
   migration009,
   migration010,
+  migration011,
+  migration012,
+  migration013,
+  migration014,
+  migration015,
+  migration016,
 ];
 
 /** Apply every migration in order. Idempotent — safe to call on each boot. */

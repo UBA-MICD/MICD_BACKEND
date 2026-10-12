@@ -9,7 +9,9 @@ import { healthRouter } from "./modules/health/health.routes";
 import { authRouter } from "./modules/auth/auth.routes";
 import { studiesRouter } from "./modules/studies/studies.routes";
 import { uploadRouter } from "./modules/upload/upload.routes";
+import { pathologiesRouter } from "./modules/pathologies/pathologies.routes";
 import { zenodoRouter } from "./modules/zenodo/zenodo.routes";
+import { segmentationRouter } from "./modules/segmentation/segmentation.routes";
 import activityRouter from "./modules/activity/activity.routes";
 import usersRouter from "./modules/users/users.routes";
 
@@ -43,6 +45,8 @@ app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(openapiSpec));
 app.use("/api", healthRouter); // public: /api/livez, /api/readyz, /api/health (alias)
 app.use(studiesRouter); // /api/studies*, /api/v1/studies* (auth-gated)
 app.use(uploadRouter); // /api/v1/studies/upload, /api/instances (auth-gated)
+app.use("/api/v1/pathologies", pathologiesRouter); // pathology catalog (auth-gated)
+app.use("/api/v1/ml", segmentationRouter); // AI segmentation, mock SAM3 (auth-gated)
 app.use("/api/v1/zenodo", zenodoRouter); // Zenodo integration (auth-gated)
 app.use("/api/v1/activity", activityRouter); // Audit log reader (admin-only)
 app.use("/api/v1/users", usersRouter); // User management (admin-only)

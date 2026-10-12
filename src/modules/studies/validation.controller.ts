@@ -1,6 +1,21 @@
 import type { RequestHandler } from "express";
 import { sendError } from "../../shared/http-error";
 import * as service from "./validation.service";
+import * as repo from "./validation.repository";
+
+/**
+ * GET /api/v1/studies/:studyId/validation
+ * Returns the most recent validation record for a study, or null.
+ * Roles: all authenticated (admin, medico, investigador)
+ */
+export const getStudyValidation: RequestHandler = async (req, res) => {
+  try {
+    const record = await repo.findLatestValidation(req.params.studyId);
+    res.json(record ?? null);
+  } catch (err) {
+    sendError(res, err);
+  }
+};
 
 /**
  * POST /api/v1/studies/:studyId/validate

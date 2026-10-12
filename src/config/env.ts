@@ -174,9 +174,17 @@ export const adminSeed = {
  * stays tight because credential stuffing is the actual threat on that route.
  */
 export const rateLimitConfig = {
-  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS ?? String(15 * 60 * 1000), 10),
+  windowMs: parseInt(
+    process.env.RATE_LIMIT_WINDOW_MS ?? String(15 * 60 * 1000),
+    10,
+  ),
   loginMax: parseInt(process.env.RATE_LIMIT_LOGIN_MAX ?? "5", 10),
   refreshMax: parseInt(process.env.RATE_LIMIT_REFRESH_MAX ?? "60", 10),
+  inviteMax: parseInt(process.env.RATE_LIMIT_INVITE_MAX ?? "20", 10),
+  passwordResetMax: parseInt(
+    process.env.RATE_LIMIT_PASSWORD_RESET_MAX ?? "10",
+    10,
+  ),
   uploadMax: parseInt(process.env.RATE_LIMIT_UPLOAD_MAX ?? "1000", 10),
   globalMax: parseInt(process.env.RATE_LIMIT_GLOBAL_MAX ?? "3000", 10),
 };
@@ -189,6 +197,36 @@ export const uploadConfig = {
     process.env.MAX_UPLOAD_BYTES ?? String(500 * 1024 * 1024),
     10,
   ),
+};
+
+// ── Pre-storage PHI verification (TK-11) ──────────────────────────────────────
+// How the upload pipeline reacts when the independent tag check finds residual
+// PHI on an instance Orthanc just stored:
+//   strict (default) — reject it: delete it from Orthanc and store nothing.
+//   warn             — store it, but flag the study needs_review.
+// Validated here so a typo'd value fails startup loudly instead of silently
+// falling back to a weaker mode than the operator intended.
+export type AnonymizationVerifyMode = "strict" | "warn";
+
+function parseVerifyMode(raw: string | undefined): AnonymizationVerifyMode {
+  const mode = (raw ?? "strict").trim().toLowerCase();
+  if (mode !== "strict" && mode !== "warn") {
+    throw new Error(
+      `ANONYMIZATION_VERIFY_MODE must be "strict" or "warn", got "${raw}"`,
+    );
+  }
+  return mode;
+}
+
+// Fail fast at startup (this call runs on import, before app.listen).
+parseVerifyMode(process.env.ANONYMIZATION_VERIFY_MODE);
+
+export const anonymizationConfig = {
+  // Lazy getter so tests can set the mode at runtime; it re-validates on every
+  // read, so an invalid value can never slip through as a silent default.
+  get verifyMode(): AnonymizationVerifyMode {
+    return parseVerifyMode(process.env.ANONYMIZATION_VERIFY_MODE);
+  },
 };
 
 // ── Zenodo (ZEN-01) ──────────────────────────────────────────────────────────
@@ -219,7 +257,6 @@ export const zenodoQuota = {
     return parseInt(process.env.ZENODO_QUOTA_LIMIT_GB ?? "50", 10);
   },
 };
-
 
 export const orthancStorageConfig = {
   get maxMb(): number | null {

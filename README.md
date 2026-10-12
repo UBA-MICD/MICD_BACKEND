@@ -118,6 +118,90 @@ Tanto el script de testing como el proceso de seeding y health-check leen dinám
 - `BACKEND_PORT` (o `PORT`): Define el puerto expuesto del backend (default `3000`).
 - `ORTHANC_HTTP_PORT`: Define el puerto REST de Orthanc (default `8042`).
 - `ORTHANC_USERNAME` / `ORTHANC_PASSWORD`: Define el usuario y contraseña del PACS (default `orthanc`).
+- `ANONYMIZATION_VERIFY_MODE`: `strict` (default) o `warn` — cómo reacciona la
+  ingesta cuando una instancia conserva PHI (ver abajo). Un valor inválido
+  **falla el arranque**, no cae a un default silencioso.
+
+---
+
+## Anonimización: qué verifica el backend (US-16)
+
+El backend **no anonimiza**: los DICOM llegan ya anonimizados desde el cliente,
+que los procesa en la máquina del usuario (ver el README de `MICD_WEB`). Lo que
+sí hace es **verificar**, porque de este lado está la puerta de salida pública.
+
+### Verificación en la ingesta
+
+Al subir una instancia, el backend lee los tags que Orthanc devuelve y
+comprueba que no quede valor identificatorio: nombres, direcciones, teléfonos e
+institución vacíos o con placeholder; `PatientID`, `AccessionNumber` y `StudyID`
+hasheados; fecha de nacimiento neutralizada; y el atestado PS3.15
+`PatientIdentityRemoved = YES`.
+
+Sólo si eso pasa se completa `studies.anonymized_at`. **Esa columna registra una
+verificación, no una afirmación de quien sube.**
+
+**Qué pasa si no pasa (TK-11), según `ANONYMIZATION_VERIFY_MODE`:**
+
+| Modo               | Instancia con PHI residual                                                                                                     |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| `strict` (default) | Se **borra de Orthanc** y **no se guarda** nada; el usuario recibe un `422 not_anonymized` con la lista de tags problemáticos. |
+| `warn`             | Se guarda, pero con `studies.needs_review = true` y `review_findings` (la lista PHI-free), y se avisa al usuario.              |
+
+Si la verificación no puede leer los tags, **falla cerrado**: en `strict` bloquea
+igual, en `warn` guarda marcado como no verificado. El `BurnedInAnnotation = YES`
+o una modalidad de riesgo (US/SC/XA) agregan un _warning_ que marca el estudio
+para revisión sin bloquear (los píxeles no se inspeccionan — ver Alcance).
+
+> El código está en [`src/shared/phi-verification.ts`](src/shared/phi-verification.ts)
+> (el verificador) y [`src/modules/upload/upload.service.ts`](src/modules/upload/upload.service.ts)
+> (la decisión en la ingesta).
+
+### Verificación antes de publicar en Zenodo
+
+Publicar genera un **DOI público y permanente**, así que esa ruta no se fía de
+la columna: vuelve a leer los tags desde Orthanc, instancia por instancia, y
+rechaza si encuentra algo identificatorio. La verificación corre en todos los
+caminos que pueden terminar publicando, incluido el reintento.
+
+| Código                     | HTTP | Cuándo                                                       |
+| -------------------------- | ---- | ------------------------------------------------------------ |
+| `not_anonymized`           | 422  | Alguna instancia no tiene `anonymized_at`                    |
+| `phi_detected`             | 422  | Los tags almacenados todavía tienen datos identificatorios   |
+| `verification_unavailable` | 503  | No se pudieron leer los tags (Orthanc caído) — falla cerrado |
+
+El mensaje de error nombra los tags y el motivo, **nunca los valores**, para no
+reintroducir el dato que está reportando en logs ni en respuestas HTTP.
+
+### Alcance y límites
+
+- La verificación mira **sólo tags de primer nivel**. No recorre secuencias
+  anidadas ni enumera tags privados, y no compara contra el original (que este
+  lado no tiene): usa heurísticas sobre el valor almacenado. El perfil del
+  anonimizador elimina esas secuencias, así que es un límite consciente, no un
+  olvido.
+- **No mira los píxeles.** El texto quemado en la imagen no se detecta por
+  contenido — hallazgo H1. El backend sólo lo _señala_ vía `BurnedInAnnotation`
+  o la modalidad (warning → `needs_review`); no hace OCR.
+- No verifica **el algoritmo del otro equipo**: confía en que, si los tags
+  quedaron limpios, el módulo hizo su trabajo. Esta capa es defensa en
+  profundidad sobre esa salida, no un reemplazo.
+- Con `curl` u otro cliente que no sea el visor, la misma puerta aplica: en
+  `strict` la ingesta rechaza el PHI (cierra el hallazgo M1), en `warn` lo marca.
+
+### Cómo correr las pruebas
+
+```bash
+npm run test:unit    # verificador + ingesta (strict/warn) + config del modo
+make test            # unitarias + integración contra la pila levantada
+```
+
+Cubren: un DICOM bien anonimizado pasa; con PHI residual se rechaza (strict) o
+se marca (warn); UIDs/fecha/tags privados; el verificador que falla cierra; y
+que ninguna respuesta, log ni finding lleve **valores** de tags. La cobertura de
+`phi-verification.ts` y `upload.service.ts` está gateada a ≥80% en
+`jest.config.js`. La suite de extremo a extremo con DICOM con PHI falso vive en
+`testing/anonymization/` — ver su README.
 
 ---
 
@@ -180,7 +264,7 @@ Para activar los Git Hooks localmente, asegúrate de tener instalado `pre-commit
 make hooks
 ```
 
-Esto ejecutará automáticamente **Prettier**, **ESLint**, **CSpell** y las **pruebas de integración** antes de confirmar o subir tus commits.
+Esto ejecutará automáticamente **Prettier**, **ESLint** y las **pruebas de integración** antes de confirmar o subir tus commits.
 
 ## Seguimiento de Cobertura
 

@@ -178,11 +178,15 @@ export const publish: RequestHandler = async (req, res) => {
       const status =
         err.code === "study_not_found"
           ? 404
-          : err.code === "not_anonymized" || err.code === "no_credentials"
+          : err.code === "not_anonymized" ||
+              err.code === "phi_detected" ||
+              err.code === "no_credentials"
             ? 422
-            : err.code === "file_too_large"
-              ? 413
-              : 400;
+            : err.code === "verification_unavailable"
+              ? 503
+              : err.code === "file_too_large"
+                ? 413
+                : 400;
       res.status(status).json({ error: err.message, code: err.code });
       return;
     }
@@ -618,7 +622,12 @@ export const retryDeposition: RequestHandler = async (req, res) => {
     res.json({ retried: result.retried, failed: result.failed });
   } catch (err: unknown) {
     if (err instanceof ZenodoPublishError) {
-      const status = err.code === "deposition_not_found" ? 404 : 422;
+      const status =
+        err.code === "deposition_not_found"
+          ? 404
+          : err.code === "verification_unavailable"
+            ? 503
+            : 422;
       res.status(status).json({ error: err.message, code: err.code });
       return;
     }

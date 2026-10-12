@@ -2,9 +2,9 @@ import { Router } from "express";
 import { requireAuth, requireRole } from "../../middleware/auth.middleware";
 import { auditStudyAccess } from "../../middleware/audit-access.middleware";
 import { AUDIT_ACTIONS } from "../../shared/audit";
-import { ROLES } from "../../shared/roles";
 import * as ctrl from "./studies.controller";
 import * as validationCtrl from "./validation.controller";
+import * as mlCtrl from "./ml.controller";
 
 /**
  * Study read routes. Registered with their full paths (mounted at root in
@@ -13,18 +13,26 @@ import * as validationCtrl from "./validation.controller";
  *   - current `/api/v1/studies*` — Postgres-backed, paginated/filtered
  *
  * Every route requires a valid token (requireAuth) plus a permitted role
- * (requireRole). Reads are open to all three roles — investigador sees the same
- * studies with PHI redacted (metadata) or anonymized (files); deletes are
- * admin-only; the outward-facing Zenodo publish-check excludes investigador.
+ * (requireRole). Reads are open to admin, medico and investigador —
+ * investigador sees the same studies with PHI redacted (metadata) or
+ * anonymized (files); deletes are admin-only; the outward-facing Zenodo
+ * publish-check excludes investigador. informatico (clinic IT) only gets the
+ * list and file-download routes it needs to find and fetch a study (DOWNLOAD).
  *
  * View/download/delete routes also carry `auditStudyAccess` (TK-06): every
  * successful access is appended to `audit_log` with user, action, study id,
- * timestamp and IP, for the medical-data access trail.
+ * timestamp and IP, for the medical-data access trail. Failed downloads are
+ * logged too, as STUDY_DOWNLOAD_FAILED.
  */
 export const studiesRouter = Router();
 
-// All three roles may read (investigador redacted/anonymized downstream).
-const READ = [requireAuth, requireRole(...ROLES)];
+// Viewing roles (investigador redacted/anonymized downstream).
+const READ = [requireAuth, requireRole("admin", "medico", "investigador")];
+// Viewing roles plus informatico: listing studies and downloading their files.
+const DOWNLOAD = [
+  requireAuth,
+  requireRole("admin", "medico", "investigador", "informatico"),
+];
 // Clinical staff (admin + medico).
 const STAFF = [requireAuth, requireRole("admin", "medico")];
 // Admin only.
@@ -53,25 +61,33 @@ studiesRouter.delete(
 // ── v1 (Postgres-backed) ──────────────────────────────────────────────────────
 studiesRouter.get(
   "/api/v1/studies/:studyId/file",
-  ...READ,
-  auditStudyAccess(AUDIT_ACTIONS.STUDY_DOWNLOADED),
+  ...DOWNLOAD,
+  auditStudyAccess(
+    AUDIT_ACTIONS.STUDY_DOWNLOADED,
+    "studyId",
+    AUDIT_ACTIONS.STUDY_DOWNLOAD_FAILED,
+  ),
   ctrl.getStudyFile,
 );
 studiesRouter.get(
   "/api/v1/studies/:studyId/instances",
-  ...READ,
+  ...DOWNLOAD,
   auditStudyAccess(AUDIT_ACTIONS.STUDY_VIEWED),
   ctrl.getStudyInstances,
 );
 studiesRouter.get(
   "/api/v1/studies/:studyId/instances/:instanceId/file",
-  ...READ,
-  auditStudyAccess(AUDIT_ACTIONS.STUDY_DOWNLOADED),
+  ...DOWNLOAD,
+  auditStudyAccess(
+    AUDIT_ACTIONS.STUDY_DOWNLOADED,
+    "studyId",
+    AUDIT_ACTIONS.STUDY_DOWNLOAD_FAILED,
+  ),
   ctrl.getInstanceFile,
 );
 studiesRouter.get(
   "/api/v1/studies",
-  ...READ,
+  ...DOWNLOAD,
   auditStudyAccess(AUDIT_ACTIONS.STUDY_VIEWED),
   ctrl.listStudies,
 );
@@ -93,6 +109,11 @@ studiesRouter.get(
 );
 
 // ── Diagnostic validation (US-26) ─────────────────────────────────────────────
+studiesRouter.get(
+  "/api/v1/studies/:studyId/validation",
+  ...READ,
+  validationCtrl.getStudyValidation,
+);
 studiesRouter.post(
   "/api/v1/studies/:studyId/validate",
   ...STAFF,
@@ -102,4 +123,16 @@ studiesRouter.post(
   "/api/v1/studies/:studyId/validation-correction",
   ...ADMIN,
   validationCtrl.correctStudyValidation,
+);
+
+// ── ML prediction (US-ML) ─────────────────────────────────────────────────────
+studiesRouter.post(
+  "/api/v1/studies/:studyId/ml/analyze",
+  ...ADMIN,
+  mlCtrl.analyzeStudy,
+);
+studiesRouter.get(
+  "/api/v1/studies/:studyId/ml/prediction",
+  ...READ,
+  mlCtrl.getStudyPrediction,
 );

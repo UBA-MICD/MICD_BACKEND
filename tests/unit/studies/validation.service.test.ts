@@ -92,16 +92,18 @@ describe("validateStudy", () => {
     );
   });
 
-  it("throws 400 when action is rejected and comment is missing", async () => {
+  it("accepts a rejection with no comment at all", async () => {
+    mockValidationRepo.insertValidation.mockResolvedValue(RECORD);
     await expect(
       validateStudy(STUDY_ID, "rejected", undefined, USER_ID, IP),
-    ).rejects.toMatchObject({ status: 400 });
+    ).resolves.toBeDefined();
   });
 
-  it("throws 400 when action is rejected and comment is blank", async () => {
+  it("accepts a rejection whose comment is only whitespace", async () => {
+    mockValidationRepo.insertValidation.mockResolvedValue(RECORD);
     await expect(
       validateStudy(STUDY_ID, "rejected", "   ", USER_ID, IP),
-    ).rejects.toMatchObject({ status: 400 });
+    ).resolves.toBeDefined();
   });
 
   it("does NOT require a comment for approved action", async () => {
@@ -136,6 +138,25 @@ describe("validateStudy", () => {
       validateStudy(STUDY_ID, "approved", undefined, USER_ID, IP),
     ).rejects.toMatchObject({ status: 500 });
   });
+
+  // TC-API-11
+  it("throws 409 when a validation already exists for the study", async () => {
+    mockValidationRepo.findLatestValidation.mockResolvedValue(RECORD);
+
+    await expect(
+      validateStudy(STUDY_ID, "approved", undefined, USER_ID, IP),
+    ).rejects.toMatchObject({ status: 409 });
+  });
+
+  it("does not call insertValidation when a prior validation exists", async () => {
+    mockValidationRepo.findLatestValidation.mockResolvedValue(RECORD);
+
+    await expect(
+      validateStudy(STUDY_ID, "approved", undefined, USER_ID, IP),
+    ).rejects.toBeDefined();
+
+    expect(mockValidationRepo.insertValidation).not.toHaveBeenCalled();
+  });
 });
 
 // ── correctStudyValidation ────────────────────────────────────────────────────
@@ -168,12 +189,13 @@ describe("correctStudyValidation", () => {
     ).rejects.toMatchObject({ status: 404 });
   });
 
-  it("throws 400 when action is rejected and comment is missing", async () => {
+  it("accepts a correction to rejected with no comment", async () => {
     mockValidationRepo.findLatestValidation.mockResolvedValue(RECORD);
+    mockValidationRepo.insertValidation.mockResolvedValue(RECORD);
 
     await expect(
       correctStudyValidation(STUDY_ID, "rejected", undefined, USER_ID, IP),
-    ).rejects.toMatchObject({ status: 400 });
+    ).resolves.toBeDefined();
   });
 
   it("wraps unexpected DB errors as 500", async () => {
@@ -183,5 +205,33 @@ describe("correctStudyValidation", () => {
     await expect(
       correctStudyValidation(STUDY_ID, "approved", undefined, USER_ID, IP),
     ).rejects.toMatchObject({ status: 500 });
+  });
+
+  it("second correction links to the second record, not the first (chain integrity)", async () => {
+    const v1 = { ...RECORD, validationId: 1, correctsId: null };
+    const v2 = { ...RECORD, validationId: 2, correctsId: 1 };
+    const v3 = { ...RECORD, validationId: 3, correctsId: 2 };
+
+    // First correction: prior is v1 → inserts v2
+    mockValidationRepo.findLatestValidation.mockResolvedValueOnce(v1);
+    mockValidationRepo.insertValidation.mockResolvedValueOnce(v2);
+
+    await correctStudyValidation(STUDY_ID, "approved", undefined, USER_ID, IP);
+
+    expect(mockValidationRepo.insertValidation).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ correctsId: 1 }),
+    );
+
+    // Second correction: prior is v2 → inserts v3 (correctsId=2, NOT 1)
+    mockValidationRepo.findLatestValidation.mockResolvedValueOnce(v2);
+    mockValidationRepo.insertValidation.mockResolvedValueOnce(v3);
+
+    await correctStudyValidation(STUDY_ID, "approved", undefined, USER_ID, IP);
+
+    expect(mockValidationRepo.insertValidation).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ correctsId: 2 }),
+    );
   });
 });

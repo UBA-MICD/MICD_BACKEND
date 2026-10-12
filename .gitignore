@@ -1,5 +1,6 @@
 # ── Dependencies ──────────────────────────────────────────────────────────────
 node_modules/
+.cspell.json
 
 # ── TypeScript compiled output ────────────────────────────────────────────────
 dist/

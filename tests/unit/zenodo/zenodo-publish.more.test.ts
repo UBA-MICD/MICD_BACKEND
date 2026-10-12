@@ -37,6 +37,41 @@ const mockedGetStoredToken = zenodoService.getStoredToken as jest.Mock;
 const SMALL = Buffer.from("small dicom");
 const HUGE = Buffer.alloc(2 * 1024 * 1024); // 2 MB > mocked 1 MB limit
 
+/** Orthanc tag payload for an instance the anonymizer has already processed. */
+const ANONYMIZED_TAGS = {
+  "0010,0010": { Value: "" },
+  "0010,0020": { Value: "A1B2C3D4E5F60718" },
+  "0012,0062": { Value: "YES" },
+};
+
+/** Same instance before anonymization — the publish guard must refuse it. */
+const PHI_TAGS = {
+  "0010,0010": { Value: "Pérez^José" },
+  "0010,0020": { Value: "30111222" },
+};
+
+/** See the identical helper in zenodo-publish.service.test.ts. */
+function mockOrthancGet(
+  body: unknown,
+  opts: { tags?: unknown; tagsError?: Error; fileError?: Error } = {},
+): void {
+  mockedAxios.get.mockImplementation(((url: unknown) => {
+    if (String(url).endsWith("/tags")) {
+      return opts.tagsError
+        ? Promise.reject(opts.tagsError)
+        : Promise.resolve({ data: opts.tags ?? ANONYMIZED_TAGS } as any);
+    }
+    return opts.fileError
+      ? Promise.reject(opts.fileError)
+      : Promise.resolve({ data: body } as any);
+  }) as any);
+}
+
+/** A one-instance study whose anonymized_at flag is set. */
+function studyRow() {
+  return { rows: [{ orthanc_instance_id: "inst-1", anonymized_at: new Date() }] };
+}
+
 const OPTS = {
   orthancStudyId: "study-1",
   environment: "sandbox" as const,
@@ -54,20 +89,50 @@ beforeEach(() => jest.clearAllMocks());
 describe("publishStudy — remaining branches", () => {
   it("throws orthanc_unavailable when a DICOM file cannot be fetched", async () => {
     mockedGetStoredToken.mockResolvedValue("tok");
-    poolQuery.mockResolvedValueOnce({
-      rows: [{ orthanc_instance_id: "inst-1", anonymized_at: new Date() }],
-    });
-    mockedAxios.get.mockRejectedValue(new Error("ECONNREFUSED"));
+    poolQuery.mockResolvedValueOnce(studyRow());
+    mockOrthancGet(SMALL, { fileError: new Error("ECONNREFUSED") });
 
     await expect(publishStudy(OPTS)).rejects.toMatchObject({ code: "orthanc_unavailable" });
   });
 
+  it("throws phi_detected when a stored instance still carries identifying tags", async () => {
+    // The flag says anonymized; the bytes say otherwise. The bytes win, because
+    // a Zenodo DOI is public and permanent. Addresses finding C1.
+    mockedGetStoredToken.mockResolvedValue("tok");
+    poolQuery.mockResolvedValueOnce(studyRow());
+    mockOrthancGet(SMALL, { tags: PHI_TAGS });
+
+    await expect(publishStudy(OPTS)).rejects.toMatchObject({ code: "phi_detected" });
+    expect(mockedAxios.post).not.toHaveBeenCalled(); // no deposition created
+    expect(mockedAxios.put).not.toHaveBeenCalled(); // nothing uploaded
+  });
+
+  it("names the offending tags without echoing their values", async () => {
+    mockedGetStoredToken.mockResolvedValue("tok");
+    poolQuery.mockResolvedValueOnce(studyRow());
+    mockOrthancGet(SMALL, { tags: PHI_TAGS });
+
+    const err = await publishStudy(OPTS).catch((e) => e);
+    expect(err.message).toContain("PatientName");
+    expect(err.message).not.toContain("Pérez");
+    expect(err.message).not.toContain("30111222");
+  });
+
+  it("refuses to publish when the tags cannot be read (fails closed)", async () => {
+    mockedGetStoredToken.mockResolvedValue("tok");
+    poolQuery.mockResolvedValueOnce(studyRow());
+    mockOrthancGet(SMALL, { tagsError: new Error("ECONNREFUSED") });
+
+    await expect(publishStudy(OPTS)).rejects.toMatchObject({
+      code: "verification_unavailable",
+    });
+    expect(mockedAxios.post).not.toHaveBeenCalled();
+  });
+
   it("throws file_too_large when over the limit and force flag is off", async () => {
     mockedGetStoredToken.mockResolvedValue("tok");
-    poolQuery.mockResolvedValueOnce({
-      rows: [{ orthanc_instance_id: "inst-1", anonymized_at: new Date() }],
-    });
-    mockedAxios.get.mockResolvedValueOnce({ data: HUGE } as any);
+    poolQuery.mockResolvedValueOnce(studyRow());
+    mockOrthancGet(HUGE);
 
     await expect(publishStudy(OPTS)).rejects.toMatchObject({ code: "file_too_large" });
   });
@@ -85,9 +150,7 @@ describe("publishStudy — remaining branches", () => {
       }) // SELECT file rows
       .mockResolvedValue({ rows: [] }); // UPDATEs
 
-    mockedAxios.get
-      .mockResolvedValueOnce({ data: HUGE } as any) // size check
-      .mockResolvedValueOnce({ data: HUGE } as any); // upload fetch
+    mockOrthancGet(HUGE);
     mockedAxios.post
       .mockResolvedValueOnce({ data: { id: 99, links: { bucket: "https://b" } } } as any)
       .mockResolvedValueOnce({ data: { doi: "10.5281/zenodo.99" } } as any);
@@ -111,7 +174,7 @@ describe("publishStudy — remaining branches", () => {
       })
       .mockResolvedValue({ rows: [] });
 
-    mockedAxios.get.mockResolvedValue({ data: SMALL } as any);
+    mockOrthancGet(SMALL);
     mockedAxios.put.mockResolvedValue({ data: {} } as any);
     mockedAxios.post
       .mockResolvedValueOnce({ data: { id: 99, links: { bucket: "https://b" } } } as any)
@@ -166,12 +229,14 @@ describe("retryFailedFiles — remaining branches", () => {
           },
         ],
       })
+      // every instance in the deposition (pre-retry PHI verification)
+      .mockResolvedValueOnce({ rows: [{ orthanc_instance_id: "inst-1" }] })
       .mockResolvedValueOnce({
         rows: [{ id: 10, orthanc_instance_id: "inst-1", filename: "inst-1.dcm" }],
       })
       .mockResolvedValue({ rows: [] });
 
-    mockedAxios.get.mockResolvedValue({ data: SMALL } as any);
+    mockOrthancGet(SMALL);
     mockedAxios.put.mockRejectedValue(new Error("still broken"));
 
     const result = await retryFailedFiles(1, 1, "");
@@ -194,6 +259,7 @@ describe("retryFailedFiles — remaining branches", () => {
           },
         ],
       })
+      .mockResolvedValueOnce({ rows: [] }) // no instances to verify
       .mockResolvedValueOnce({ rows: [] }) // no failed files to retry
       .mockResolvedValueOnce({ rows: [{ count: "2" }] }); // 2 files still pending
 
@@ -217,6 +283,7 @@ describe("retryFailedFiles — remaining branches", () => {
           },
         ],
       })
+      .mockResolvedValueOnce({ rows: [] }) // no instances to verify
       .mockResolvedValueOnce({ rows: [] }) // no failed files
       .mockResolvedValueOnce({ rows: [{ count: "0" }] }) // everything completed
       .mockResolvedValue({ rows: [] });

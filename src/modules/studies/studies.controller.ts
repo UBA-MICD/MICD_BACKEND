@@ -62,6 +62,13 @@ export const getInstanceFile: RequestHandler = async (req, res) => {
   }
 };
 
+const VALID_VALIDATION_STATUSES = new Set([
+  "approved",
+  "rejected",
+  "review",
+  "none",
+]);
+
 export const listStudies: RequestHandler = async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
@@ -69,6 +76,18 @@ export const listStudies: RequestHandler = async (req, res) => {
       100,
       Math.max(1, parseInt(req.query.limit as string) || 20),
     );
+    const rawValidationStatus = req.query.validation_status as
+      string | undefined;
+    if (
+      rawValidationStatus &&
+      !VALID_VALIDATION_STATUSES.has(rawValidationStatus)
+    ) {
+      res.status(400).json({
+        error:
+          "validation_status must be one of: approved, rejected, review, none",
+      });
+      return;
+    }
     const filters = {
       modality: (req.query.modality as string) || null,
       dateFrom: (req.query.date_from as string) || null,
@@ -76,6 +95,9 @@ export const listStudies: RequestHandler = async (req, res) => {
       search: (req.query.search as string) || null,
       zenodoLinked: req.query.zenodo_linked === "true" ? true : null,
       description: (req.query.description as string) || null,
+      validationStatus:
+        (rawValidationStatus as import("./studies.repository").ValidationStatusFilter) ??
+        null,
     };
     const result = await studiesService.listStudies(
       page,
