@@ -7,6 +7,7 @@
  * under src/modules by review.
  */
 
+import { ROLES } from "./shared/roles";
 const errorResponse = (description: string) => ({
   description,
   content: {
@@ -766,7 +767,7 @@ export const openapiSpec = {
           email: { type: "string", format: "email" },
           role: {
             type: "string",
-            enum: ["admin", "medico", "investigador"],
+            enum: [...ROLES],
             description: "RBAC role driving per-endpoint authorization.",
           },
         },
