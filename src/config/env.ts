@@ -96,6 +96,8 @@ export const inferenceConfig = {
   timeoutMs: positiveInt(process.env.AI_INFERENCE_TIMEOUT_MS, 30_000),
   /** Segmentations in flight at once; each holds a whole DICOM in memory. */
   maxConcurrency: positiveInt(process.env.AI_INFERENCE_MAX_CONCURRENCY, 4),
+  /** Shared secret with the service (its INFERENCE_API_KEY). Empty ⇒ not sent. */
+  apiKey: process.env.AI_INFERENCE_API_KEY?.trim() || undefined,
 };
 
 export const jwtConfig = {

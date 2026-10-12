@@ -9,6 +9,8 @@ import { HttpError } from "../shared/http-error";
  * with user-facing messages, so the service layer stays free of them:
  *   201 → the segmentation (validated field by field)
  *   400 → the service could not read the DICOM → 422
+ *   422 → the model found no region → 422, with the service's message
+ *   401 / 403 → the shared key doesn't match: a configuration error → 502
  *   timeout → 504; refused / DNS / 503 (model loading) → 503
  *   anything else, or an invalid body → 502
  */
@@ -22,6 +24,8 @@ export interface InferenceResult {
   segmentationId: number | null;
   seed: number;
   model: string;
+  /** Exact weights that answered (null for the mock), for traceability. */
+  modelVersion: string | null;
   simulated: boolean;
   contour: InferencePoint[];
   mask: { width: number; height: number; rle: number[]; pixelCount: number };
@@ -73,7 +77,8 @@ export function parseInferenceResult(body: unknown): InferenceResult | null {
     !isNonNegInt(b.seed) ||
     !isStr(b.model) ||
     typeof b.simulated !== "boolean" ||
-    !isNonNegInt(b.inferenceMs)
+    !isNonNegInt(b.inferenceMs) ||
+    !(b.modelVersion === undefined || isStrOrNull(b.modelVersion))
   ) {
     return null;
   }
@@ -117,6 +122,7 @@ export function parseInferenceResult(body: unknown): InferenceResult | null {
     segmentationId: null,
     seed: b.seed,
     model: b.model,
+    modelVersion: b.modelVersion ?? null,
     simulated: b.simulated,
     contour: b.contour.map((p: InferencePoint) => ({ x: p.x, y: p.y })),
     mask: {
@@ -167,6 +173,9 @@ export async function segmentDicom(
     const res = await axios.post(`${inferenceConfig.url}/segmentation`, form, {
       timeout: inferenceConfig.timeoutMs,
       validateStatus: () => true,
+      headers: inferenceConfig.apiKey
+        ? { "X-Inference-Key": inferenceConfig.apiKey }
+        : undefined,
     });
     status = res.status;
     data = res.data;
@@ -197,10 +206,24 @@ export async function segmentDicom(
       error: "La imagen no es un DICOM que se pueda segmentar.",
     });
   }
+  if (status === 422) {
+    const detail = (data as { detail?: unknown } | null)?.detail;
+    throw new HttpError(422, {
+      error:
+        typeof detail === "string"
+          ? detail
+          : "El modelo no encontró ninguna región en la imagen.",
+    });
+  }
   console.error(
     `[inference] /segmentation answered ${status}: ${JSON.stringify(data)?.slice(0, 300)}`,
   );
   if (status === 503) throw unavailable();
+  if (status === 401 || status === 403) {
+    console.error(
+      "[inference] the service rejected AI_INFERENCE_API_KEY — check that it matches INFERENCE_API_KEY",
+    );
+  }
   throw new HttpError(502, {
     error: `El servicio de inferencia respondió con un error (${status}).`,
   });

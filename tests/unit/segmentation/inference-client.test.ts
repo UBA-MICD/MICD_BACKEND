@@ -19,6 +19,7 @@ const RESULT = {
   segmentationId: null,
   seed: 42,
   model: "mock-sam3",
+  modelVersion: null,
   simulated: true,
   contour: [{ x: 1, y: 2 }],
   mask: { width: 4, height: 3, rle: [5, 2, 5], pixelCount: 2 },
@@ -102,6 +103,17 @@ describe("segmentDicom", () => {
       503,
     ],
     [
+      "a 422 (the model found no region)",
+      () =>
+        post.mockResolvedValueOnce({ status: 422, data: { detail: "nada" } }),
+      422,
+    ],
+    [
+      "a 401 (shared key mismatch)",
+      () => post.mockResolvedValueOnce({ status: 401, data: {} }),
+      502,
+    ],
+    [
       "a 400 (not a readable DICOM)",
       () => post.mockResolvedValueOnce({ status: 400, data: {} }),
       422,
@@ -122,6 +134,34 @@ describe("segmentDicom", () => {
 
 describe("parseInferenceResult", () => {
   const clone = (): any => JSON.parse(JSON.stringify(RESULT));
+
+  it("passes the service's 422 message through", async () => {
+    post.mockResolvedValueOnce({
+      status: 422,
+      data: { detail: "El modelo no encontró ninguna región en la imagen." },
+    });
+    const err = await errorOf(segmentDicom(DICOM));
+    expect(err.body).toEqual({
+      error: "El modelo no encontró ninguna región en la imagen.",
+    });
+  });
+
+  it("does not send a key header when no key is configured", async () => {
+    post.mockResolvedValueOnce({ status: 201, data: RESULT });
+    await segmentDicom(DICOM);
+    expect((post.mock.calls[0][2] as any).headers).toBeUndefined();
+  });
+
+  it("keeps modelVersion and defaults it to null when absent", () => {
+    expect(
+      parseInferenceResult({
+        ...clone(),
+        modelVersion: "v3/model.pt@sha256:ab",
+      })!.modelVersion,
+    ).toBe("v3/model.pt@sha256:ab");
+    const { modelVersion: _drop, ...older } = clone();
+    expect(parseInferenceResult(older)!.modelVersion).toBeNull();
+  });
 
   it("accepts a well-formed response and copies only known fields", () => {
     const body = { ...clone(), internalDebug: "secret", segmentationId: 999 };
@@ -148,6 +188,7 @@ describe("parseInferenceResult", () => {
     ],
     ["a negative seed", (b: any) => (b.seed = -1)],
     ["a non-boolean simulated", (b: any) => (b.simulated = "no")],
+    ["a non-string modelVersion", (b: any) => (b.modelVersion = 3)],
     ["a missing derived UID", (b: any) => delete b.derived.sopInstanceUid],
     ["a non-object body", () => "nope"],
   ])("rejects %s", (_label, mutate) => {

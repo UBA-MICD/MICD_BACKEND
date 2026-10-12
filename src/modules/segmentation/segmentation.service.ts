@@ -182,7 +182,7 @@ export async function runSegmentation(
       studyId: stored.studyInstanceUid,
       instanceId: sopInstanceUid,
       modelId: result.model,
-      modelVersion: null,
+      modelVersion: result.modelVersion,
       prompt: { seed: result.seed, points, smoothingPasses },
       maskRle: result.mask.rle,
       maskShape: [result.mask.height, result.mask.width],

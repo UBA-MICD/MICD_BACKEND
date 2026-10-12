@@ -11,6 +11,7 @@ const RESULT = {
   segmentationId: null,
   seed: 7,
   model: "mock-sam3",
+  modelVersion: null,
   simulated: true,
   contour: [{ x: 1, y: 1 }],
   mask: { width: 2, height: 2, rle: [1, 2, 1], pixelCount: 2 },
@@ -26,7 +27,12 @@ const RESULT = {
 };
 
 let server: http.Server;
-let received: { path: string; contentType: string; body: string } | null = null;
+let received: {
+  path: string;
+  contentType: string;
+  key: string | undefined;
+  body: string;
+} | null = null;
 let segmentDicom: typeof import("../../../src/clients/inference.client").segmentDicom;
 
 beforeAll(async () => {
@@ -37,6 +43,7 @@ beforeAll(async () => {
       received = {
         path: req.url ?? "",
         contentType: req.headers["content-type"] ?? "",
+        key: req.headers["x-inference-key"] as string | undefined,
         body: Buffer.concat(chunks).toString("latin1"),
       };
       res.writeHead(201, { "Content-Type": "application/json" });
@@ -47,6 +54,7 @@ beforeAll(async () => {
   const { port } = server.address() as AddressInfo;
   // config/env is read on import, so point it at this server first.
   process.env.AI_INFERENCE_URL = `http://127.0.0.1:${port}`;
+  process.env.AI_INFERENCE_API_KEY = "s3cret";
   ({ segmentDicom } = await import("../../../src/clients/inference.client"));
 });
 
@@ -64,6 +72,7 @@ describe("segmentDicom over real HTTP", () => {
 
     expect(out).toEqual(RESULT);
     expect(received!.path).toBe("/segmentation");
+    expect(received!.key).toBe("s3cret");
     expect(received!.contentType).toMatch(/^multipart\/form-data; boundary=/);
     const body = received!.body;
     expect(body).toMatch(/name="file"; filename="image\.dcm"/);
