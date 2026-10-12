@@ -124,8 +124,11 @@ jobs:
           script: |
             set -euo pipefail
             cd "$DEPLOY_PATH"
+            # Same env file as the deploy step — compose interpolates the whole
+            # file (incl. ${VAR:?} secrets) even for exec/logs.
+            COMPOSE="docker compose -f docker-compose.staging.yml --env-file .env.staging"
             for i in $(seq 1 12); do
-              if docker compose -f docker-compose.staging.yml --env-file .env.staging exec -T backend \
+              if $COMPOSE exec -T backend \
                    wget -qO- http://localhost:3000/api/readyz >/dev/null 2>&1; then
                 echo "Backend ready on attempt $i"
                 exit 0
@@ -134,5 +137,5 @@ jobs:
               sleep 5
             done
             echo "Health check failed after 60s" >&2
-            docker compose -f docker-compose.staging.yml logs --tail=50 backend >&2 || true
+            $COMPOSE logs --tail=50 backend >&2 || true
             exit 1
