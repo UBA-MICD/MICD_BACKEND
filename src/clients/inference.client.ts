@@ -7,10 +7,10 @@ import { HttpError } from "../shared/http-error";
  * `POST /segmentation`). It sends one DICOM and returns the segmentation in the
  * contract the viewer already consumes. Transport outcomes become HttpErrors
  * with user-facing messages, so the service layer stays free of them:
- *   201 → the segmentation
+ *   201 → the segmentation (validated field by field)
  *   400 → the service could not read the DICOM → 422
- *   timeout / connection refused → 503, service unavailable
- *   anything else → 502, the service answered but not usefully
+ *   timeout → 504; refused / DNS / 503 (model loading) → 503
+ *   anything else, or an invalid body → 502
  */
 
 export interface InferencePoint {
@@ -48,18 +48,93 @@ const unavailable = (): HttpError =>
       "El servicio de inferencia no está disponible. Intentá de nuevo más tarde.",
   });
 
-function isInferenceResult(body: unknown): body is InferenceResult {
-  const b = body as InferenceResult | null;
-  return (
-    !!b &&
-    typeof b.model === "string" &&
-    Array.isArray(b.contour) &&
-    !!b.mask &&
-    Array.isArray(b.mask.rle) &&
-    Number.isInteger(b.mask.width) &&
-    Number.isInteger(b.mask.height) &&
-    !!b.derived
-  );
+const TIMEOUT_CODES = new Set(["ECONNABORTED", "ETIMEDOUT"]);
+
+const isNonNegInt = (v: unknown): v is number =>
+  Number.isInteger(v) && (v as number) >= 0;
+const isPosInt = (v: unknown): v is number =>
+  Number.isInteger(v) && (v as number) > 0;
+const isStr = (v: unknown): v is string => typeof v === "string";
+const isStrOrNull = (v: unknown): v is string | null =>
+  v === null || typeof v === "string";
+
+/**
+ * Parse the service's body into the contract, or null if anything is off. The
+ * mask is persisted as a clinical candidate, so its RLE must cover exactly
+ * width×height pixels and agree with pixelCount. Only known fields are copied:
+ * whatever else the service adds never reaches the client.
+ */
+export function parseInferenceResult(body: unknown): InferenceResult | null {
+  if (!body || typeof body !== "object") return null;
+  const b = body as Record<string, any>;
+  const { mask, derived } = b;
+
+  if (
+    !isNonNegInt(b.seed) ||
+    !isStr(b.model) ||
+    typeof b.simulated !== "boolean" ||
+    !isNonNegInt(b.inferenceMs)
+  ) {
+    return null;
+  }
+  if (
+    !Array.isArray(b.contour) ||
+    !b.contour.every(
+      (p: any) => p && Number.isFinite(p.x) && Number.isFinite(p.y),
+    )
+  ) {
+    return null;
+  }
+  if (
+    !mask ||
+    !isPosInt(mask.width) ||
+    !isPosInt(mask.height) ||
+    !Array.isArray(mask.rle) ||
+    !mask.rle.every(isNonNegInt) ||
+    !isNonNegInt(mask.pixelCount)
+  ) {
+    return null;
+  }
+  const rle = mask.rle as number[];
+  const covered = rle.reduce((sum, run) => sum + run, 0);
+  const foreground = rle.reduce((sum, run, i) => (i % 2 ? sum + run : sum), 0);
+  if (covered !== mask.width * mask.height || foreground !== mask.pixelCount) {
+    return null;
+  }
+  if (
+    !derived ||
+    !isStr(derived.sopInstanceUid) ||
+    !isStr(derived.seriesInstanceUid) ||
+    !isStr(derived.seriesDescription) ||
+    !isStrOrNull(derived.referencedSopInstanceUid) ||
+    !isStrOrNull(derived.referencedSopClassUid) ||
+    !isStr(derived.derivationDescription)
+  ) {
+    return null;
+  }
+
+  return {
+    segmentationId: null,
+    seed: b.seed,
+    model: b.model,
+    simulated: b.simulated,
+    contour: b.contour.map((p: InferencePoint) => ({ x: p.x, y: p.y })),
+    mask: {
+      width: mask.width,
+      height: mask.height,
+      rle,
+      pixelCount: mask.pixelCount,
+    },
+    derived: {
+      sopInstanceUid: derived.sopInstanceUid,
+      seriesInstanceUid: derived.seriesInstanceUid,
+      seriesDescription: derived.seriesDescription,
+      referencedSopInstanceUid: derived.referencedSopInstanceUid,
+      referencedSopClassUid: derived.referencedSopClassUid,
+      derivationDescription: derived.derivationDescription,
+    },
+    inferenceMs: b.inferenceMs,
+  };
 }
 
 export async function segmentDicom(
@@ -67,14 +142,21 @@ export async function segmentDicom(
   options: InferenceOptions = {},
 ): Promise<InferenceResult> {
   const form = new FormData();
+  // A view over the same memory, not a copy: the Blob makes the only copy.
+  const bytes = new Uint8Array(
+    dicom.buffer,
+    dicom.byteOffset,
+    dicom.byteLength,
+  );
   form.append(
     "file",
-    new Blob([new Uint8Array(dicom)], { type: "application/dicom" }),
+    new Blob([bytes], { type: "application/dicom" }),
     "image.dcm",
   );
   if (options.seed !== undefined) form.append("seed", String(options.seed));
-  if (options.points !== undefined)
+  if (options.points !== undefined) {
     form.append("points", String(options.points));
+  }
   if (options.smoothingPasses !== undefined) {
     form.append("smoothing_passes", String(options.smoothingPasses));
   }
@@ -88,13 +170,24 @@ export async function segmentDicom(
     });
     status = res.status;
     data = res.data;
-  } catch {
-    // No HTTP answer at all: refused, DNS, or the timeout above.
+  } catch (err) {
+    // No HTTP answer at all: timeout, refused, DNS.
+    const code = (err as { code?: string })?.code ?? "";
+    console.error(
+      `[inference] POST /segmentation failed: ${code || (err as Error)?.message}`,
+    );
+    if (TIMEOUT_CODES.has(code)) {
+      throw new HttpError(504, {
+        error: "El servicio de inferencia tardó demasiado en responder.",
+      });
+    }
     throw unavailable();
   }
 
   if (status === 201 || status === 200) {
-    if (isInferenceResult(data)) return data;
+    const result = parseInferenceResult(data);
+    if (result) return result;
+    console.error("[inference] invalid response body from /segmentation");
     throw new HttpError(502, {
       error: "El servicio de inferencia devolvió una respuesta inválida.",
     });
@@ -104,6 +197,9 @@ export async function segmentDicom(
       error: "La imagen no es un DICOM que se pueda segmentar.",
     });
   }
+  console.error(
+    `[inference] /segmentation answered ${status}: ${JSON.stringify(data)?.slice(0, 300)}`,
+  );
   if (status === 503) throw unavailable();
   throw new HttpError(502, {
     error: `El servicio de inferencia respondió con un error (${status}).`,

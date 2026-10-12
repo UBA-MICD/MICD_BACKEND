@@ -135,15 +135,34 @@ const SEG_SELECT = `
   LEFT JOIN users ru ON ru.id = s.reviewed_by
 `;
 
-/** Orthanc's id for a stored instance, by its DICOM SOP Instance UID. */
-export async function findOrthancInstanceId(
+export interface StoredInstance {
+  orthancInstanceId: string;
+  studyInstanceUid: string | null;
+}
+
+/**
+ * A stored instance by its DICOM SOP Instance UID: its Orthanc id (to fetch
+ * the file) and its study UID (so a candidate is filed under the study the
+ * server knows, never one the client claims).
+ */
+export async function findStoredInstance(
   sopInstanceUid: string,
-): Promise<string | null> {
-  const { rows } = await pool.query<{ orthanc_instance_id: string }>(
-    "SELECT orthanc_instance_id FROM studies WHERE sop_instance_uid = $1 LIMIT 1",
+): Promise<StoredInstance | null> {
+  const { rows } = await pool.query<{
+    orthanc_instance_id: string;
+    study_instance_uid: string | null;
+  }>(
+    `SELECT orthanc_instance_id, study_instance_uid
+       FROM studies WHERE sop_instance_uid = $1 LIMIT 1`,
     [sopInstanceUid],
   );
-  return rows[0]?.orthanc_instance_id ?? null;
+  const row = rows[0];
+  return row
+    ? {
+        orthancInstanceId: row.orthanc_instance_id,
+        studyInstanceUid: row.study_instance_uid,
+      }
+    : null;
 }
 
 export async function insertSegmentation(params: {

@@ -9,7 +9,8 @@
 
 import axios from "axios";
 import { HttpError, isHttpError } from "../../shared/http-error";
-import { logAction, AUDIT_ACTIONS } from "../../shared/audit";
+import { logAction, AUDIT_ACTIONS, type AuditAction } from "../../shared/audit";
+import { inferenceConfig } from "../../config/env";
 import { orthancClient } from "../../clients/orthanc.client";
 import {
   segmentDicom,
@@ -31,15 +32,16 @@ export interface SegmentationRequest {
   /**
    * Source instance. Required: the image is fetched from Orthanc by this UID,
    * so a DICOM opened off the local disk (not on the server) can't be segmented.
+   * Any studyInstanceUid the client sends is ignored — the study is taken from
+   * the stored instance.
    */
-  sopInstanceUid?: string;
-  studyInstanceUid?: string;
-  /** Optional seed, forwarded for reproducibility. */
-  seed?: number;
+  sopInstanceUid?: unknown;
+  /** Optional seed (0..2^32-1), forwarded for reproducibility. */
+  seed?: unknown;
   /** Polar vertices before smoothing (16-512, default 96). */
-  points?: number;
+  points?: unknown;
   /** Chaikin smoothing passes (0-4, default 2). */
-  smoothingPasses?: number;
+  smoothingPasses?: unknown;
 }
 
 /**
@@ -49,6 +51,39 @@ export interface SegmentationRequest {
 export type SegmentationResponse = InferenceResult;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+/** DICOM UID: dot-separated digits, at most 64 characters. */
+const DICOM_UID = /^[0-9]+(\.[0-9]+)*$/;
+
+function requireUid(value: unknown): string {
+  if (value === undefined || value === null || value === "") {
+    throw new HttpError(422, {
+      error:
+        "La segmentación con IA requiere una imagen del servidor; las abiertas desde el disco local no se pueden segmentar.",
+    });
+  }
+  if (
+    typeof value !== "string" ||
+    value.length > 64 ||
+    !DICOM_UID.test(value)
+  ) {
+    throw new HttpError(400, {
+      error: "El campo 'sopInstanceUid' no es un UID DICOM válido.",
+    });
+  }
+  return value;
+}
+
+function optionalSeed(value: unknown): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 0 || n > 0xffffffff) {
+    throw new HttpError(400, {
+      error: "El campo 'seed' debe ser un entero entre 0 y 4294967295.",
+    });
+  }
+  return n;
+}
 
 function optionalInt(
   value: unknown,
@@ -66,26 +101,29 @@ function optionalInt(
   return Math.min(max, Math.max(min, Math.round(n)));
 }
 
+const notOnServer = (): HttpError =>
+  new HttpError(404, { error: "La imagen no está en el servidor." });
+
 /** The stored DICOM for an instance, or a 404 when the server doesn't have it. */
-async function fetchSourceDicom(sopInstanceUid: string): Promise<Buffer> {
-  const orthancId = await repo.findOrthancInstanceId(sopInstanceUid);
-  if (!orthancId) {
-    throw new HttpError(404, {
-      error: "La imagen no está en el servidor.",
-    });
-  }
+async function fetchSourceDicom(orthancInstanceId: string): Promise<Buffer> {
   try {
-    const res = await orthancClient.getInstanceFile(orthancId);
+    const res = await orthancClient.getInstanceFile(orthancInstanceId);
+    // Buffer.from(ArrayBuffer) is a view, not a copy.
     return Buffer.from(res.data);
   } catch (err) {
     if (axios.isAxiosError(err) && err.response?.status === 404) {
-      throw new HttpError(404, {
-        error: "La imagen no está en el servidor.",
-      });
+      throw notOnServer();
     }
     throw new HttpError(503, { error: "Orthanc no está disponible." });
   }
 }
+
+/**
+ * Segmentations currently running. Each one holds a whole DICOM in memory and
+ * an inference call open, so past the cap a request is turned away (429)
+ * instead of queuing more work behind a busy model.
+ */
+let inFlight = 0;
 
 // ── Entry point ──────────────────────────────────────────────────────────────
 
@@ -94,18 +132,15 @@ async function fetchSourceDicom(sopInstanceUid: string): Promise<Buffer> {
  *
  * Keep this signature stable: the browser calls it through
  * `POST /api/v1/ml/segmentation`. Rows/Columns are no longer needed from the
- * client — the inference service reads them from the DICOM itself.
+ * client — the inference service reads them from the DICOM itself. Every
+ * attempt that reaches the stored image is audited (TK-06), success or not.
  */
 export async function runSegmentation(
   input: SegmentationRequest,
-  context?: { userId?: number },
+  context: { userId: number; ip: string },
 ): Promise<SegmentationResponse> {
-  if (!input.sopInstanceUid) {
-    throw new HttpError(422, {
-      error:
-        "La segmentación con IA requiere una imagen del servidor; las abiertas desde el disco local no se pueden segmentar.",
-    });
-  }
+  const sopInstanceUid = requireUid(input.sopInstanceUid);
+  const seed = optionalSeed(input.seed);
   const points = optionalInt(input.points, "points", 16, 512);
   const smoothingPasses = optionalInt(
     input.smoothingPasses,
@@ -113,20 +148,39 @@ export async function runSegmentation(
     0,
     4,
   );
-  const seed =
-    input.seed !== undefined && Number.isFinite(Number(input.seed))
-      ? Number(input.seed) >>> 0
-      : undefined;
 
-  const dicom = await fetchSourceDicom(input.sopInstanceUid);
-  const result = await segmentDicom(dicom, { seed, points, smoothingPasses });
+  if (inFlight >= inferenceConfig.maxConcurrency) {
+    throw new HttpError(429, {
+      error:
+        "Hay demasiadas segmentaciones en curso. Intentá de nuevo en unos segundos.",
+    });
+  }
+  inFlight++;
 
-  // Persist the candidate so it can be corrected later (US-45).
-  let segmentationId: number | null = null;
-  if (context?.userId) {
+  const audit = (
+    action: AuditAction,
+    detail: Record<string, unknown>,
+  ): void => {
+    void logAction({
+      userId: context.userId,
+      action,
+      resourceId: sopInstanceUid,
+      ip: context.ip,
+      detail,
+    });
+  };
+
+  try {
+    const stored = await repo.findStoredInstance(sopInstanceUid);
+    if (!stored) throw notOnServer();
+
+    const dicom = await fetchSourceDicom(stored.orthancInstanceId);
+    const result = await segmentDicom(dicom, { seed, points, smoothingPasses });
+
+    // Persist the candidate so it can be corrected later (US-45).
     const record = await repo.insertSegmentation({
-      studyId: input.studyInstanceUid ?? null,
-      instanceId: input.sopInstanceUid,
+      studyId: stored.studyInstanceUid,
+      instanceId: sopInstanceUid,
       modelId: result.model,
       modelVersion: null,
       prompt: { seed: result.seed, points, smoothingPasses },
@@ -135,10 +189,21 @@ export async function runSegmentation(
       status: "candidate",
       createdBy: context.userId,
     });
-    segmentationId = record.id;
-  }
 
-  return { ...result, segmentationId };
+    audit(AUDIT_ACTIONS.AI_SEGMENTATION_REQUESTED, {
+      segmentationId: record.id,
+      model: result.model,
+      simulated: result.simulated,
+    });
+    return { ...result, segmentationId: record.id };
+  } catch (err) {
+    audit(AUDIT_ACTIONS.AI_SEGMENTATION_FAILED, {
+      status: isHttpError(err) ? err.status : 500,
+    });
+    throw err;
+  } finally {
+    inFlight--;
+  }
 }
 
 // ── Corrections (US-45) ───────────────────────────────────────────────────────

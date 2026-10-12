@@ -64,14 +64,25 @@ export const refreshRateLimiter = rateLimit({
 });
 
 /**
-* Uploads are the most expensive route: each one buffers a file in memory and
-* pushes it to Orthanc. The budget has to clear a bulk seed run from a single
-* IP, so it bounds runaway clients rather than shaping normal use.
-*/
+ * Uploads are the most expensive route: each one buffers a file in memory and
+ * pushes it to Orthanc. The budget has to clear a bulk seed run from a single
+ * IP, so it bounds runaway clients rather than shaping normal use.
+ */
 export const uploadRateLimiter = rateLimit({
- ...base,
- limit: rateLimitConfig.uploadMax,
- message: { error: "Too many uploads. Try again later." },
+  ...base,
+  limit: rateLimitConfig.uploadMax,
+  message: { error: "Too many uploads. Try again later." },
+});
+
+/**
+ * Each segmentation pulls a whole DICOM from Orthanc and holds an inference
+ * call open (GPU/CPU-bound), so it gets its own budget well below the global
+ * one: enough for interactive use, not for a script hammering the model.
+ */
+export const segmentationRateLimiter = rateLimit({
+  ...base,
+  limit: rateLimitConfig.segmentationMax,
+  message: { error: "Too many segmentation requests. Try again later." },
 });
 
 /**

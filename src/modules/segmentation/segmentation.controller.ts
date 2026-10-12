@@ -4,7 +4,7 @@ import * as service from "./segmentation.service";
 
 /**
  * POST /api/v1/ml/segmentation
- * Body: { sopInstanceUid, studyInstanceUid?, seed?, points?, smoothingPasses? }
+ * Body: { sopInstanceUid, seed?, points?, smoothingPasses? }
  *
  * Segment one image stored on the server: the DICOM is fetched from Orthanc by
  * its SOP Instance UID and run through the inference service (TK-44). The
@@ -16,6 +16,7 @@ export const segmentImage: RequestHandler = async (req, res) => {
     const body = (req.body ?? {}) as service.SegmentationRequest;
     const result = await service.runSegmentation(body, {
       userId: Number(req.user!.sub),
+      ip: req.ip ?? "",
     });
     res.status(201).json(result);
   } catch (err) {

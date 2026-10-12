@@ -7,7 +7,10 @@ import { jest, describe, it, expect, beforeEach } from "@jest/globals";
 jest.mock("axios", () => ({ __esModule: true, default: { post: jest.fn() } }));
 
 import axios from "axios";
-import { segmentDicom } from "../../../src/clients/inference.client";
+import {
+  parseInferenceResult,
+  segmentDicom,
+} from "../../../src/clients/inference.client";
 import { HttpError } from "../../../src/shared/http-error";
 
 const post = axios.post as unknown as jest.Mock<any>;
@@ -76,8 +79,21 @@ describe("segmentDicom", () => {
 
   it.each([
     [
-      "the service can't reach (refused / timeout)",
-      () => post.mockRejectedValueOnce(new Error("ECONNREFUSED")),
+      "a timeout",
+      () =>
+        post.mockRejectedValueOnce({
+          code: "ECONNABORTED",
+          message: "timeout",
+        }),
+      504,
+    ],
+    [
+      "a refused connection",
+      () =>
+        post.mockRejectedValueOnce({
+          code: "ECONNREFUSED",
+          message: "refused",
+        }),
       503,
     ],
     [
@@ -101,5 +117,44 @@ describe("segmentDicom", () => {
     const err = await errorOf(segmentDicom(DICOM));
     expect(err).toBeInstanceOf(HttpError);
     expect(err.status).toBe(status);
+  });
+});
+
+describe("parseInferenceResult", () => {
+  const clone = (): any => JSON.parse(JSON.stringify(RESULT));
+
+  it("accepts a well-formed response and copies only known fields", () => {
+    const body = { ...clone(), internalDebug: "secret", segmentationId: 999 };
+    const out = parseInferenceResult(body)!;
+    expect(out).toEqual(RESULT);
+    expect(out).not.toHaveProperty("internalDebug");
+    expect(out.segmentationId).toBeNull();
+  });
+
+  it.each([
+    [
+      "an RLE that doesn't cover width×height",
+      (b: any) => (b.mask.rle = [5, 2, 4]),
+    ],
+    [
+      "a pixelCount that disagrees with the RLE",
+      (b: any) => (b.mask.pixelCount = 3),
+    ],
+    ["a negative run", (b: any) => (b.mask.rle = [6, -1, 7])],
+    ["a non-integer width", (b: any) => (b.mask.width = 4.5)],
+    [
+      "a contour point that isn't numeric",
+      (b: any) => (b.contour = [{ x: "1", y: 2 }]),
+    ],
+    ["a negative seed", (b: any) => (b.seed = -1)],
+    ["a non-boolean simulated", (b: any) => (b.simulated = "no")],
+    ["a missing derived UID", (b: any) => delete b.derived.sopInstanceUid],
+    ["a non-object body", () => "nope"],
+  ])("rejects %s", (_label, mutate) => {
+    const body = clone();
+    const replaced = mutate(body);
+    expect(
+      parseInferenceResult(replaced === "nope" ? "nope" : body),
+    ).toBeNull();
   });
 });

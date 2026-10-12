@@ -79,14 +79,23 @@ export const orthancConfig = {
   auth: { username: orthancUsername, password: orthancPassword },
 };
 
+/** A positive integer from the environment, or `fallback` when unset/invalid. */
+function positiveInt(raw: string | undefined, fallback: number): number {
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : fallback;
+}
+
 // The Python inference service (MICD_TRAINING, US-41). Reachable only from this
 // backend over the Docker `micd` network; never exposed to the browser.
+// timeoutMs is validated because axios treats a NaN timeout as "no timeout".
 export const inferenceConfig = {
   url: (process.env.AI_INFERENCE_URL ?? "http://micd-inference:8000").replace(
     /\/+$/,
     "",
   ),
-  timeoutMs: parseInt(process.env.AI_INFERENCE_TIMEOUT_MS ?? "30000", 10),
+  timeoutMs: positiveInt(process.env.AI_INFERENCE_TIMEOUT_MS, 30_000),
+  /** Segmentations in flight at once; each holds a whole DICOM in memory. */
+  maxConcurrency: positiveInt(process.env.AI_INFERENCE_MAX_CONCURRENCY, 4),
 };
 
 export const jwtConfig = {
@@ -196,6 +205,10 @@ export const rateLimitConfig = {
     10,
   ),
   uploadMax: parseInt(process.env.RATE_LIMIT_UPLOAD_MAX ?? "1000", 10),
+  segmentationMax: parseInt(
+    process.env.RATE_LIMIT_SEGMENTATION_MAX ?? "60",
+    10,
+  ),
   globalMax: parseInt(process.env.RATE_LIMIT_GLOBAL_MAX ?? "3000", 10),
 };
 

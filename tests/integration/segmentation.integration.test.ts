@@ -86,10 +86,21 @@ describe("POST /api/v1/ml/segmentation (TK-44)", () => {
     await expect(
       axios.post(
         `${BASE_URL}/api/v1/ml/segmentation`,
-        { sopInstanceUid: `test.tk44.missing.${Date.now()}` },
+        { sopInstanceUid: `1.2.826.0.1.999.${Date.now()}` },
         { headers: staffHeader },
       ),
     ).rejects.toMatchObject({ response: { status: 404 } });
+  });
+
+  it("400 — a sopInstanceUid that isn't a DICOM UID", async () => {
+    if (!backendAvailable) return;
+    await expect(
+      axios.post(
+        `${BASE_URL}/api/v1/ml/segmentation`,
+        { sopInstanceUid: "not-a-uid" },
+        { headers: staffHeader },
+      ),
+    ).rejects.toMatchObject({ response: { status: 400 } });
   });
 });
 
