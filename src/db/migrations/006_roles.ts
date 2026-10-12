@@ -1,4 +1,5 @@
 import { adminSeed } from "../../config/env";
+import { ROLES } from "../../shared/roles";
 import type { MigrationStatement } from "../migrate";
 
 /**
@@ -6,7 +7,7 @@ import type { MigrationStatement } from "../migrate";
  *
  * Adds the columns that turn the flat credential store into a role-aware,
  * lifecycle-aware user table:
- *   - `role`          — admin | medico | investigador (NOT NULL, CHECK-constrained)
+ *   - `role`          — one of ROLES (NOT NULL, CHECK-constrained)
  *   - `status`        — active | invited | blocked | deleted (NOT NULL, CHECK)
  *   - `name`          — display name (US-H04 create form)
  *   - `last_login_at` — stamped on each successful login, shown to the admin
@@ -27,6 +28,11 @@ import type { MigrationStatement } from "../migrate";
  * only when both are set (so CI, which leaves them unset, boots adminless).
  */
 
+// Built from ROLES because every migration re-runs on boot: a hard-coded list
+// would reset any newer role back to 'medico'. Role strings are constants, safe
+// to inline.
+const ROLE_LIST = ROLES.map((r) => `'${r}'`).join(", ");
+
 // One multi-statement DDL string (no bound parameters → simple-query protocol,
 // which permits several statements separated by `;`).
 const DDL = `
@@ -35,12 +41,12 @@ const DDL = `
   -- role: add, normalize any NULL/foreign value to 'medico', then constrain.
   ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT;
   UPDATE users SET role = 'medico'
-    WHERE role IS NULL OR role NOT IN ('admin', 'medico', 'investigador');
+    WHERE role IS NULL OR role NOT IN (${ROLE_LIST});
   ALTER TABLE users ALTER COLUMN role SET DEFAULT 'medico';
   ALTER TABLE users ALTER COLUMN role SET NOT NULL;
   ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
   ALTER TABLE users ADD CONSTRAINT users_role_check
-    CHECK (role IN ('admin', 'medico', 'investigador'));
+    CHECK (role IN (${ROLE_LIST}));
 
   -- status: same normalize-then-constrain.
   ALTER TABLE users ADD COLUMN IF NOT EXISTS status TEXT;

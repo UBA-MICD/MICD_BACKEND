@@ -5,8 +5,8 @@
 import { ROLES, isRole } from "../../../src/shared/roles";
 
 describe("ROLES", () => {
-  it("is exactly the three known roles, in order", () => {
-    expect(ROLES).toEqual(["admin", "medico", "investigador"]);
+  it("is exactly the four known roles, in order", () => {
+    expect(ROLES).toEqual(["admin", "medico", "investigador", "informatico"]);
   });
 });
 

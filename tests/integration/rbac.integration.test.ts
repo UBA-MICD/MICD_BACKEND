@@ -26,6 +26,8 @@ beforeAll(async () => {
   }
 });
 
+const VIEW: Role[] = ["admin", "medico", "investigador"];
+
 // Safe, non-mutating routes, one per authorization tier.
 interface Case {
   label: string;
@@ -36,6 +38,10 @@ interface Case {
 
 const cases: Case[] = [
   { label: "studies list (all roles)", method: "get", path: "/api/v1/studies", allowed: [...ROLES] },
+  { label: "legacy studies list (viewing roles)", method: "get", path: "/api/studies", allowed: VIEW },
+  { label: "segmentation read (viewing roles)", method: "get", path: "/api/v1/ml/segmentation", allowed: VIEW },
+  { label: "zenodo search (viewing roles)", method: "get", path: "/api/v1/zenodo/search", allowed: VIEW },
+  { label: "users list (admin only)", method: "get", path: "/api/v1/users/", allowed: ["admin"] },
   { label: "audit log (admin only)", method: "get", path: "/api/v1/activity/", allowed: ["admin"] },
   { label: "audit export (admin only)", method: "get", path: "/api/v1/activity/export", allowed: ["admin"] },
   { label: "zenodo sync config (admin only)", method: "get", path: "/api/v1/zenodo/config/sync", allowed: ["admin"] },

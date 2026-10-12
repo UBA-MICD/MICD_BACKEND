@@ -1,13 +1,18 @@
 import { Router } from "express";
 import { requireAuth, requireRole } from "../../middleware/auth.middleware";
-import { ROLES } from "../../shared/roles";
 import { listPathologies } from "./pathologies.controller";
 
 /**
- * Pathology catalog — read-only, all authenticated roles. Mounted at
+ * Pathology catalog — read-only, open to every role (informatico included, since it
+ * feeds the upload form). Mounted at
  * /api/v1/pathologies in app.ts. The client fetches this to build the upload
  * classification selector.
  */
 export const pathologiesRouter = Router();
 
-pathologiesRouter.get("/", requireAuth, requireRole(...ROLES), listPathologies);
+pathologiesRouter.get(
+  "/",
+  requireAuth,
+  requireRole("admin", "medico", "investigador", "informatico"),
+  listPathologies,
+);
