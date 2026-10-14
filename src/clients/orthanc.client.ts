@@ -87,4 +87,8 @@ export const orthancClient = {
 
   deleteInstance: (id: string): Promise<AxiosResponse> =>
     axios.delete(`${BASE}/instances/${seg(id)}`, { auth }),
+
+  /** All instance IDs belonging to a study (used for existence checks). */
+  getStudyInstances: (studyId: string): Promise<AxiosResponse<string[]>> =>
+    axios.get<string[]>(`${BASE}/studies/${seg(studyId)}/instances`, { auth }),
 };

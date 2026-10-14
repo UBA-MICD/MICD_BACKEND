@@ -1,14 +1,22 @@
 /**
  * Unit tests for upload.service — DICOM ingestion flow, validation, duplicate
- * handling, and error mapping. Orthanc client and the upload repository are
- * mocked; no live PACS or DB required.
+ * handling, error mapping, and the TK-11 pre-storage PHI check (strict/warn).
+ * Orthanc client and the upload repository are mocked; no live PACS or DB.
  */
-import { jest, describe, it, expect, beforeEach } from "@jest/globals";
+import {
+  jest,
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+} from "@jest/globals";
 
 jest.mock("../../../src/clients/orthanc.client", () => ({
   orthancClient: {
     postInstance: jest.fn(),
     getInstanceTags: jest.fn(),
+    deleteInstance: jest.fn(),
   },
 }));
 
@@ -41,17 +49,35 @@ const ORTHANC_ALREADY_STORED_RESPONSE = {
   Status: "AlreadyStored",
 };
 
-const SAMPLE_TAGS = {
+/** Non-identifying tags common to every fixture. */
+const BASE_TAGS = {
   "0008,0018": { Value: "1.2.3.4.5" }, // SOP Instance UID
   "0020,000d": { Value: "1.2.3.study" }, // Study Instance UID
-  "0010,0010": { Value: "Doe^John" }, // Patient Name
-  "0010,0020": { Value: "PID-001" }, // Patient ID
   "0008,0020": { Value: "20240101" }, // Study Date
   "0008,1030": { Value: "Chest CT" }, // Study Description
-  "0008,0060": { Value: "CT" }, // Modality
+  "0008,0060": { Value: "CT" }, // Modality (not risky)
   "0020,0013": { Value: [1] }, // Instance Number
   "0028,0010": { Value: [512] }, // Rows
   "0028,0011": { Value: [512] }, // Cols
+  "0008,103e": { Value: "Axial Brain" }, // Series Description (TK-12)
+  "0020,1208": { Value: [200] }, // Number of Study Related Images (TK-12)
+};
+
+/** What the project anonymizer produces: blanked name, hashed id, attestation. */
+const ANONYMIZED_TAGS = {
+  ...BASE_TAGS,
+  "0010,0010": { Value: "" }, // Patient Name blanked
+  "0010,0020": { Value: "A1B2C3D4E5F60718" }, // Patient ID hashed
+  "0012,0062": { Value: "YES" }, // PatientIdentityRemoved
+};
+
+/** A raw instance that still carries identifying values. */
+const RAW_TAGS = {
+  ...BASE_TAGS,
+  "0010,0010": { Value: "Doe^John" }, // Patient Name
+  "0010,0020": { Value: "PID-001" }, // Patient ID (not pseudonymized)
+  "0010,0030": { Value: "19800101" }, // real Patient Birth Date
+  // no attestation — the instance was never anonymized
 };
 
 const STUDY_ROW = {
@@ -64,20 +90,25 @@ const STUDY_ROW = {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  delete process.env.ANONYMIZATION_VERIFY_MODE; // default: strict
   orthancClient.postInstance.mockResolvedValue({
     data: ORTHANC_SUCCESS_RESPONSE,
   });
-  orthancClient.getInstanceTags.mockResolvedValue({ data: SAMPLE_TAGS });
+  orthancClient.getInstanceTags.mockResolvedValue({ data: ANONYMIZED_TAGS });
+  orthancClient.deleteInstance.mockResolvedValue({ data: {} });
   mockRepo.upsertStudy.mockResolvedValue(STUDY_ROW);
   mockRepo.findBySopInstanceUid.mockResolvedValue(undefined);
   mockRepo.deleteBySopInstanceUid.mockResolvedValue(undefined);
+});
+
+afterEach(() => {
+  delete process.env.ANONYMIZATION_VERIFY_MODE;
 });
 
 // ── file validation ───────────────────────────────────────────────────────────
 
 describe("uploadDicom — file validation", () => {
   it("throws 413 when the file exceeds the maximum allowed size", async () => {
-    // MAX_FILE_SIZE defaults to 500 MB; we send size = MAX+1
     const MAX = 500 * 1024 * 1024;
     const oversized = { buffer: Buffer.alloc(1), size: MAX + 1 };
 
@@ -105,7 +136,7 @@ describe("uploadDicom — file validation", () => {
 // ── Orthanc interaction ───────────────────────────────────────────────────────
 
 describe("uploadDicom — Orthanc upload", () => {
-  it("posts the file buffer to Orthanc", async () => {
+  it("posts the received buffer to Orthanc (anonymization is client-side)", async () => {
     await uploadDicom(SMALL_FILE, false);
     expect(orthancClient.postInstance).toHaveBeenCalledWith(SMALL_BUFFER);
   });
@@ -139,10 +170,10 @@ describe("uploadDicom — Orthanc upload", () => {
   });
 });
 
-// ── DICOM tag extraction & metadata persistence ───────────────────────────────
+// ── DICOM tag extraction & metadata persistence (anonymized instance) ──────────
 
 describe("uploadDicom — metadata extraction and persistence", () => {
-  it("upserts study metadata with the tags fetched from Orthanc", async () => {
+  it("upserts study metadata and marks a clean instance anonymized", async () => {
     const result = await uploadDicom(SMALL_FILE, false);
 
     expect(mockRepo.upsertStudy).toHaveBeenCalledWith(
@@ -151,39 +182,27 @@ describe("uploadDicom — metadata extraction and persistence", () => {
         orthancInstanceId: "inst-abc",
         sopInstanceUid: "1.2.3.4.5",
         studyInstanceUid: "1.2.3.study",
-        patientName: "Doe^John",
-        patientId: "PID-001",
         modality: "CT",
+        needsReview: false,
+        anonymizedAt: expect.any(Date),
       }),
     );
     expect(result.study).toEqual(STUDY_ROW);
     expect(result.orthanc).toEqual(ORTHANC_SUCCESS_RESPONSE);
+    expect(result.verification).toEqual({ needsReview: false, findings: [] });
+    expect(orthancClient.deleteInstance).not.toHaveBeenCalled();
   });
 
   it("falls back to modality 'OTHER' when the DICOM tag is absent", async () => {
-    const tagsWithoutModality = { ...SAMPLE_TAGS };
-    delete (tagsWithoutModality as any)["0008,0060"];
-    orthancClient.getInstanceTags.mockResolvedValue({
-      data: tagsWithoutModality,
-    });
+    const tags = { ...ANONYMIZED_TAGS };
+    delete (tags as any)["0008,0060"];
+    orthancClient.getInstanceTags.mockResolvedValue({ data: tags });
 
     await uploadDicom(SMALL_FILE, false);
 
     expect(mockRepo.upsertStudy).toHaveBeenCalledWith(
       expect.objectContaining({ modality: "OTHER" }),
     );
-  });
-
-  it("still upserts when Orthanc's tag endpoint fails (non-fatal)", async () => {
-    orthancClient.getInstanceTags.mockRejectedValue(
-      new Error("tags unavailable"),
-    );
-
-    // Should not throw
-    await expect(uploadDicom(SMALL_FILE, false)).resolves.toHaveProperty(
-      "orthanc",
-    );
-    expect(mockRepo.upsertStudy).toHaveBeenCalled();
   });
 
   it("throws 500 when the DB upsert fails", async () => {
@@ -200,32 +219,16 @@ describe("uploadDicom — metadata extraction and persistence", () => {
   });
 });
 
-// ── duplicate handling ────────────────────────────────────────────────────────
+// ── duplicate handling (anonymized instance passes the check first) ────────────
 
 describe("uploadDicom — duplicate handling", () => {
-  it("throws 409 when Orthanc says AlreadyStored and force=false", async () => {
+  beforeEach(() => {
     orthancClient.postInstance.mockResolvedValue({
       data: ORTHANC_ALREADY_STORED_RESPONSE,
     });
-    mockRepo.findBySopInstanceUid.mockResolvedValue({
-      id: 1,
-      orthanc_study_id: "study-xyz",
-    });
-
-    let caught: unknown;
-    try {
-      await uploadDicom(SMALL_FILE, false);
-    } catch (err) {
-      caught = err;
-    }
-    expect(isHttpError(caught)).toBe(true);
-    expect((caught as { status: number }).status).toBe(409);
   });
 
-  it("includes the existing study id and sopInstanceUid in the 409 body", async () => {
-    orthancClient.postInstance.mockResolvedValue({
-      data: ORTHANC_ALREADY_STORED_RESPONSE,
-    });
+  it("throws 409 when Orthanc says AlreadyStored and force=false", async () => {
     mockRepo.findBySopInstanceUid.mockResolvedValue({
       id: 1,
       orthanc_study_id: "study-xyz",
@@ -237,14 +240,13 @@ describe("uploadDicom — duplicate handling", () => {
     } catch (err) {
       caught = err;
     }
-    expect(caught?.body?.error).toBe("duplicate");
-    expect(caught?.body?.existingStudyId).toBe("study-xyz");
+    expect(isHttpError(caught)).toBe(true);
+    expect(caught.status).toBe(409);
+    expect(caught.body?.error).toBe("duplicate");
+    expect(caught.body?.existingStudyId).toBe("study-xyz");
   });
 
   it("with force=true, deletes the existing record then upserts", async () => {
-    orthancClient.postInstance.mockResolvedValue({
-      data: ORTHANC_ALREADY_STORED_RESPONSE,
-    });
     mockRepo.findBySopInstanceUid.mockResolvedValue({
       id: 1,
       orthanc_study_id: "study-xyz",
@@ -257,21 +259,169 @@ describe("uploadDicom — duplicate handling", () => {
     expect(result.study).toEqual(STUDY_ROW);
   });
 
-  it("with force=true and no existing DB record, skips delete and upserts normally", async () => {
+  it("does not delete the DB record when Orthanc reports Success", async () => {
     orthancClient.postInstance.mockResolvedValue({
-      data: ORTHANC_ALREADY_STORED_RESPONSE,
+      data: ORTHANC_SUCCESS_RESPONSE,
     });
-    mockRepo.findBySopInstanceUid.mockResolvedValue(undefined);
-
-    await uploadDicom(SMALL_FILE, true);
-
-    expect(mockRepo.deleteBySopInstanceUid).toHaveBeenCalled();
-    expect(mockRepo.upsertStudy).toHaveBeenCalled();
-  });
-
-  it("does not call deleteBySopInstanceUid when Orthanc reports Success (not a duplicate)", async () => {
-    // postInstance is already set to return Status=Success in beforeEach
     await uploadDicom(SMALL_FILE, false);
     expect(mockRepo.deleteBySopInstanceUid).not.toHaveBeenCalled();
+  });
+});
+
+// ── TK-12: series_description + number_of_images extraction ────────────────────
+
+describe("uploadDicom — TK-12 metadata (series_description, number_of_images)", () => {
+  it("forwards seriesDescription and numberOfImages to upsertStudy", async () => {
+    await uploadDicom(SMALL_FILE, false);
+
+    expect(mockRepo.upsertStudy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        seriesDescription: "Axial Brain",
+        numberOfImages: 200,
+      }),
+    );
+  });
+
+  it("stores seriesDescription empty / numberOfImages null when absent", async () => {
+    const tags = { ...ANONYMIZED_TAGS } as any;
+    delete tags["0008,103e"];
+    delete tags["0020,1208"];
+    orthancClient.getInstanceTags.mockResolvedValue({ data: tags });
+
+    await uploadDicom(SMALL_FILE, false);
+
+    expect(mockRepo.upsertStudy).toHaveBeenCalledWith(
+      expect.objectContaining({ seriesDescription: "", numberOfImages: null }),
+    );
+  });
+});
+
+// ── TK-11: strict mode (default) ───────────────────────────────────────────────
+
+describe("uploadDicom — TK-11 strict mode", () => {
+  beforeEach(() => {
+    orthancClient.getInstanceTags.mockResolvedValue({ data: RAW_TAGS });
+  });
+
+  it("rejects residual PII with 422, deletes from Orthanc, stores nothing", async () => {
+    let caught: any;
+    try {
+      await uploadDicom(SMALL_FILE, false);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught.status).toBe(422);
+    expect(caught.body.error).toBe("not_anonymized");
+    // The offending tags are named...
+    const names = caught.body.tags.map((t: any) => t.name);
+    expect(names).toEqual(
+      expect.arrayContaining(["PatientName", "PatientID", "PatientBirthDate"]),
+    );
+    // ...and cleanup + no persistence happened.
+    expect(orthancClient.deleteInstance).toHaveBeenCalledWith("inst-abc");
+    expect(mockRepo.upsertStudy).not.toHaveBeenCalled();
+  });
+
+  it("never leaks tag values into the 422 body (names/reasons only)", async () => {
+    let caught: any;
+    try {
+      await uploadDicom(SMALL_FILE, false);
+    } catch (err) {
+      caught = err;
+    }
+    const serialized = JSON.stringify(caught.body);
+    expect(serialized).not.toContain("Doe^John");
+    expect(serialized).not.toContain("PID-001");
+    expect(serialized).not.toContain("19800101");
+  });
+
+  it("never logs tag values", async () => {
+    const logged: string[] = [];
+    const spyLog = jest
+      .spyOn(console, "log")
+      .mockImplementation((...a: unknown[]) => void logged.push(a.join(" ")));
+    const spyErr = jest
+      .spyOn(console, "error")
+      .mockImplementation((...a: unknown[]) => void logged.push(a.join(" ")));
+
+    await uploadDicom(SMALL_FILE, false).catch(() => {});
+
+    const all = logged.join("\n");
+    expect(all).not.toContain("Doe^John");
+    expect(all).not.toContain("PID-001");
+    spyLog.mockRestore();
+    spyErr.mockRestore();
+  });
+
+  it("fails closed when tags cannot be read (verifier can't confirm)", async () => {
+    orthancClient.getInstanceTags.mockRejectedValue(new Error("tags down"));
+
+    let caught: any;
+    try {
+      await uploadDicom(SMALL_FILE, false);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught.status).toBe(422);
+    expect(orthancClient.deleteInstance).toHaveBeenCalledWith("inst-abc");
+    expect(mockRepo.upsertStudy).not.toHaveBeenCalled();
+  });
+
+  it("stores a clean-but-burned-in instance, flagged for review", async () => {
+    orthancClient.getInstanceTags.mockResolvedValue({
+      data: { ...ANONYMIZED_TAGS, "0028,0301": { Value: "YES" } },
+    });
+
+    const result = await uploadDicom(SMALL_FILE, false);
+
+    expect(orthancClient.deleteInstance).not.toHaveBeenCalled();
+    expect(mockRepo.upsertStudy).toHaveBeenCalledWith(
+      expect.objectContaining({ needsReview: true }),
+    );
+    expect(result.verification.needsReview).toBe(true);
+    expect(result.verification.findings[0].name).toBe("BurnedInAnnotation");
+  });
+});
+
+// ── TK-11: warn mode ───────────────────────────────────────────────────────────
+
+describe("uploadDicom — TK-11 warn mode", () => {
+  beforeEach(() => {
+    process.env.ANONYMIZATION_VERIFY_MODE = "warn";
+    orthancClient.getInstanceTags.mockResolvedValue({ data: RAW_TAGS });
+  });
+
+  it("stores residual PII but flags needs_review (no delete, no block)", async () => {
+    const result = await uploadDicom(SMALL_FILE, false);
+
+    expect(orthancClient.deleteInstance).not.toHaveBeenCalled();
+    expect(mockRepo.upsertStudy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        needsReview: true,
+        anonymizedAt: null,
+        reviewFindings: expect.arrayContaining([
+          expect.objectContaining({ name: "PatientName", severity: "error" }),
+        ]),
+      }),
+    );
+    expect(result.verification.needsReview).toBe(true);
+  });
+
+  it("stores flagged-as-unverified when tags cannot be read", async () => {
+    orthancClient.getInstanceTags.mockRejectedValue(new Error("tags down"));
+
+    const result = await uploadDicom(SMALL_FILE, false);
+
+    expect(orthancClient.deleteInstance).not.toHaveBeenCalled();
+    expect(mockRepo.upsertStudy).toHaveBeenCalledWith(
+      expect.objectContaining({ needsReview: true, anonymizedAt: null }),
+    );
+    expect(result.verification.needsReview).toBe(true);
+  });
+
+  it("the review findings never carry tag values", async () => {
+    await uploadDicom(SMALL_FILE, false);
+    const arg: any = mockRepo.upsertStudy.mock.calls[0][0];
+    expect(JSON.stringify(arg.reviewFindings)).not.toContain("Doe^John");
   });
 });

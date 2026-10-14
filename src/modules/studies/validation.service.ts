@@ -25,7 +25,8 @@ function toResponse(record: repo.ValidationRecord): ValidationResponse {
 
 /**
  * Register a new validation (approve / reject / flag for review).
- * Accessible to medico and admin; comment is required when action = 'rejected'.
+ * Accessible to medico and admin; the comment is optional for every action,
+ * including 'rejected'.
  */
 export async function validateStudy(
   studyId: string,
@@ -34,15 +35,17 @@ export async function validateStudy(
   userId: number,
   ip: string,
 ): Promise<ValidationResponse> {
-  if (action === "rejected" && !comment?.trim()) {
-    throw new HttpError(400, {
-      error: "Un comentario es obligatorio al rechazar un estudio.",
-    });
-  }
-
   const exists = await studiesRepo.findFirstInstanceId(studyId);
   if (!exists) {
     throw new HttpError(404, { error: "Estudio no encontrado." });
+  }
+
+  const prior = await repo.findLatestValidation(studyId);
+  if (prior) {
+    throw new HttpError(409, {
+      error:
+        "El estudio ya tiene una validación registrada. Usar /validation-correction para corregirla.",
+    });
   }
 
   try {
@@ -80,12 +83,6 @@ export async function correctStudyValidation(
   userId: number,
   ip: string,
 ): Promise<ValidationResponse> {
-  if (action === "rejected" && !comment?.trim()) {
-    throw new HttpError(400, {
-      error: "Un comentario es obligatorio al rechazar un estudio.",
-    });
-  }
-
   const prior = await repo.findLatestValidation(studyId);
   if (!prior) {
     throw new HttpError(404, {

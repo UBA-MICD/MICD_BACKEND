@@ -81,15 +81,15 @@ describe("POST /api/v1/studies/:studyId/validate", () => {
     expect(data.status).toBe("review");
   });
 
-  it("400 — rejected without comment is rejected", async () => {
+  it("201 — rejected without comment is accepted (the comment is optional)", async () => {
     if (!backendAvailable || !existingStudyId) return;
-    await expect(
-      axios.post(
-        `${BASE_URL}/api/v1/studies/${existingStudyId}/validate`,
-        { action: "rejected" },
-        { headers: staffHeader },
-      ),
-    ).rejects.toMatchObject({ response: { status: 400 } });
+    const { status, data } = await axios.post(
+      `${BASE_URL}/api/v1/studies/${existingStudyId}/validate`,
+      { action: "rejected" },
+      { headers: staffHeader },
+    );
+    expect(status).toBe(201);
+    expect(data.status).toBe("rejected");
   });
 
   it("400 — missing action returns 400", async () => {
@@ -226,14 +226,131 @@ describe("POST /api/v1/studies/:studyId/validation-correction", () => {
     ).rejects.toMatchObject({ response: { status: 401 } });
   });
 
-  it("400 — rejected without comment returns 400", async () => {
+  it("201 — a correction to rejected without comment is accepted", async () => {
+    if (!backendAvailable || !existingStudyId) return;
+    const { status } = await axios.post(
+      `${BASE_URL}/api/v1/studies/${existingStudyId}/validation-correction`,
+      { action: "rejected" },
+      { headers: adminHeader },
+    );
+    expect(status).toBe(201);
+  });
+});
+
+// ── GET /api/v1/studies?validation_status= ────────────────────────────────────
+
+describe("GET /api/v1/studies?validation_status filter", () => {
+  beforeAll(async () => {
+    // Ensure the study has a known validation state (approved) before running filter tests
+    if (!backendAvailable || !existingStudyId) return;
+    await axios.post(
+      `${BASE_URL}/api/v1/studies/${existingStudyId}/validate`,
+      { action: "approved" },
+      { headers: staffHeader },
+    );
+  });
+
+  it("200 — returns only approved studies when validation_status=approved", async () => {
+    if (!backendAvailable) return;
+    const { status, data } = await axios.get(
+      `${BASE_URL}/api/v1/studies?validation_status=approved&limit=50`,
+      { headers: staffHeader },
+    );
+    expect(status).toBe(200);
+    expect(Array.isArray(data.studies)).toBe(true);
+    for (const study of data.studies) {
+      expect(study.validation_status).toBe("approved");
+    }
+  });
+
+  it("200 — approved study does NOT appear in validation_status=none results", async () => {
+    if (!backendAvailable || !existingStudyId) return;
+    const { data } = await axios.get(
+      `${BASE_URL}/api/v1/studies?validation_status=none&limit=100`,
+      { headers: staffHeader },
+    );
+    const found = data.studies.some(
+      (s: { orthanc_study_id: string }) =>
+        s.orthanc_study_id === existingStudyId,
+    );
+    expect(found).toBe(false);
+  });
+
+  it("200 — approved study appears in validation_status=approved results", async () => {
+    if (!backendAvailable || !existingStudyId) return;
+    const { data } = await axios.get(
+      `${BASE_URL}/api/v1/studies?validation_status=approved&limit=100`,
+      { headers: staffHeader },
+    );
+    const found = data.studies.some(
+      (s: { orthanc_study_id: string }) =>
+        s.orthanc_study_id === existingStudyId,
+    );
+    expect(found).toBe(true);
+  });
+
+  it("200 — no validation_status filter returns all studies", async () => {
+    if (!backendAvailable) return;
+    const [all, approved] = await Promise.all([
+      axios.get(`${BASE_URL}/api/v1/studies?limit=100`, {
+        headers: staffHeader,
+      }),
+      axios.get(
+        `${BASE_URL}/api/v1/studies?validation_status=approved&limit=100`,
+        {
+          headers: staffHeader,
+        },
+      ),
+    ]);
+    expect(all.data.total).toBeGreaterThanOrEqual(approved.data.total);
+  });
+
+  it("400 — invalid validation_status value returns 400", async () => {
+    if (!backendAvailable) return;
+    await expect(
+      axios.get(`${BASE_URL}/api/v1/studies?validation_status=invalid`, {
+        headers: staffHeader,
+      }),
+    ).rejects.toMatchObject({ response: { status: 400 } });
+  });
+});
+
+// ── GET /validation — role access ─────────────────────────────────────────────
+
+describe("GET /api/v1/studies/:studyId/validation — role access", () => {
+  it("200 — investigador can read the validation status (read is open to all roles)", async () => {
+    if (!backendAvailable || !existingStudyId) return;
+    const { status, data } = await axios.get(
+      `${BASE_URL}/api/v1/studies/${existingStudyId}/validation`,
+      { headers: investigadorHeader },
+    );
+    expect(status).toBe(200);
+    // May be null or a record — both are valid
+    expect(data === null || typeof data === "object").toBe(true);
+  });
+
+  it("200 — medico can read the validation status", async () => {
+    if (!backendAvailable || !existingStudyId) return;
+    const { status } = await axios.get(
+      `${BASE_URL}/api/v1/studies/${existingStudyId}/validation`,
+      { headers: staffHeader },
+    );
+    expect(status).toBe(200);
+  });
+
+  it("200 — admin can read the validation status", async () => {
+    if (!backendAvailable || !existingStudyId) return;
+    const { status } = await axios.get(
+      `${BASE_URL}/api/v1/studies/${existingStudyId}/validation`,
+      { headers: adminHeader },
+    );
+    expect(status).toBe(200);
+  });
+
+  it("401 — unauthenticated request is rejected", async () => {
     if (!backendAvailable || !existingStudyId) return;
     await expect(
-      axios.post(
-        `${BASE_URL}/api/v1/studies/${existingStudyId}/validation-correction`,
-        { action: "rejected" },
-        { headers: adminHeader },
-      ),
-    ).rejects.toMatchObject({ response: { status: 400 } });
+      axios.get(`${BASE_URL}/api/v1/studies/${existingStudyId}/validation`),
+    ).rejects.toMatchObject({ response: { status: 401 } });
   });
 });

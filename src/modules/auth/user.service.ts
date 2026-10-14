@@ -47,3 +47,14 @@ export async function setPasswordAndActivate(
     [id, passwordHash],
   );
 }
+
+/** Replace an existing user's password hash (password reset). */
+export async function setPassword(
+  id: number,
+  passwordHash: string,
+): Promise<void> {
+  await pool.query("UPDATE users SET password = $2 WHERE id = $1", [
+    id,
+    passwordHash,
+  ]);
+}

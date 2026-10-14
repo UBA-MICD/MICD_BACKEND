@@ -62,6 +62,7 @@ const EMPTY_FILTERS: StudyFilters = {
   search: null,
   zenodoLinked: null,
   description: null,
+  validationStatus: null,
 };
 
 const makeStudyRow = (over: Record<string, unknown> = {}) => ({
@@ -168,6 +169,7 @@ describe("listStudies — filtering", () => {
       search: "Doe",
       zenodoLinked: true,
       description: null,
+      validationStatus: null,
     };
     mockRepo.countStudies.mockResolvedValue(1);
     mockRepo.findStudies.mockResolvedValue([makeStudyRow()]);

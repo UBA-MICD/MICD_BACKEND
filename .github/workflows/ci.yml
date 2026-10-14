@@ -90,8 +90,10 @@ jobs:
           DB_PORT: 5432
 
       - name: Upload coverage report to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
-          file: ./coverage/lcov.info
-          fail_ci_if_error: true
+          files: ./coverage/lcov.info
+          # A Codecov upload/TLS outage must not fail the build — coverage is
+          # still gated by Codecov's status checks and the jest coverageThreshold.
+          fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}

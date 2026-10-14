@@ -32,9 +32,21 @@ export const loginRateLimiter = rateLimit({
  */
 export const inviteRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 20,
+  limit: rateLimitConfig.inviteMax,
   standardHeaders: true,
   legacyHeaders: false,
+  message: { error: "Too many attempts. Try again later." },
+});
+
+/**
+ * Rate limiter for the public password-recovery endpoints (request, validate,
+ * reset). Its own budget so recovery traffic can't lock out logins or invites.
+ * Counts every request: each forgot-password call may send an email, so this is
+ * also the per-IP brake on email bombing (a per-account cooldown backs it up).
+ */
+export const passwordResetRateLimiter = rateLimit({
+  ...base,
+  limit: rateLimitConfig.passwordResetMax,
   message: { error: "Too many attempts. Try again later." },
 });
 
