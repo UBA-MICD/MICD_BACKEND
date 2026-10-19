@@ -44,6 +44,8 @@ export interface InferenceOptions {
   seed?: number;
   points?: number;
   smoothingPasses?: number;
+  /** Frame to segment in a multi-frame image (0-based). Default 0. */
+  frame?: number;
 }
 
 const unavailable = (): HttpError =>
@@ -166,6 +168,7 @@ export async function segmentDicom(
   if (options.smoothingPasses !== undefined) {
     form.append("smoothing_passes", String(options.smoothingPasses));
   }
+  if (options.frame !== undefined) form.append("frame", String(options.frame));
 
   let status: number;
   let data: unknown;

@@ -68,6 +68,7 @@ describe("segmentDicom over real HTTP", () => {
       seed: 7,
       points: 64,
       smoothingPasses: 1,
+      frame: 3,
     });
 
     expect(out).toEqual(RESULT);
@@ -81,5 +82,6 @@ describe("segmentDicom over real HTTP", () => {
     expect(body).toMatch(/name="seed"\r\n\r\n7\r\n/);
     expect(body).toMatch(/name="points"\r\n\r\n64\r\n/);
     expect(body).toMatch(/name="smoothing_passes"\r\n\r\n1\r\n/);
+    expect(body).toMatch(/name="frame"\r\n\r\n3\r\n/);
   });
 });
