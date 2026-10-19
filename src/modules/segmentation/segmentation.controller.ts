@@ -108,6 +108,21 @@ export const getSegmentationHistory: RequestHandler = async (req, res) => {
 };
 
 /**
+ * GET /api/v1/ml/segmentation/:id
+ * One persisted candidate by id (DB read), or 404. Roles: all authenticated.
+ */
+export const getSegmentationById: RequestHandler = async (req, res) => {
+  try {
+    const result = await service.getSegmentationById(
+      segmentationId(req.params.id),
+    );
+    res.json(result);
+  } catch (err) {
+    sendError(res, err);
+  }
+};
+
+/**
  * GET /api/v1/ml/segmentation?studyId=..&instanceId=..
  * The current segmentation (original + latest correction masks) for one image,
  * or null. Lets the viewer redraw the polygon after a slice/layout change or a

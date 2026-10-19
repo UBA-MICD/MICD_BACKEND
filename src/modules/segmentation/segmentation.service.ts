@@ -42,6 +42,11 @@ export interface SegmentationRequest {
   points?: unknown;
   /** Chaikin smoothing passes (0-4, default 2). */
   smoothingPasses?: unknown;
+  /**
+   * Frame to segment in a multi-frame image (0-based, default 0). The inference
+   * service validates it against the DICOM's NumberOfFrames.
+   */
+  frame?: unknown;
 }
 
 /**
@@ -101,6 +106,19 @@ function optionalInt(
   return Math.min(max, Math.max(min, Math.round(n)));
 }
 
+/** 0-based frame index. The upper bound (NumberOfFrames) is enforced by the
+ * inference service, which reads it from the DICOM. */
+function optionalFrame(value: unknown): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 0) {
+    throw new HttpError(400, {
+      error: "El campo 'frame' debe ser un entero mayor o igual a 0.",
+    });
+  }
+  return n;
+}
+
 const notOnServer = (): HttpError =>
   new HttpError(404, { error: "La imagen no está en el servidor." });
 
@@ -148,6 +166,7 @@ export async function runSegmentation(
     0,
     4,
   );
+  const frame = optionalFrame(input.frame);
 
   if (inFlight >= inferenceConfig.maxConcurrency) {
     throw new HttpError(429, {
@@ -175,7 +194,12 @@ export async function runSegmentation(
     if (!stored) throw notOnServer();
 
     const dicom = await fetchSourceDicom(stored.orthancInstanceId);
-    const result = await segmentDicom(dicom, { seed, points, smoothingPasses });
+    const result = await segmentDicom(dicom, {
+      seed,
+      points,
+      smoothingPasses,
+      frame,
+    });
 
     // Persist the candidate so it can be corrected later (US-45).
     const record = await repo.insertSegmentation({
@@ -183,7 +207,7 @@ export async function runSegmentation(
       instanceId: sopInstanceUid,
       modelId: result.model,
       modelVersion: result.modelVersion,
-      prompt: { seed: result.seed, points, smoothingPasses },
+      prompt: { seed: result.seed, points, smoothingPasses, frame },
       maskRle: result.mask.rle,
       maskShape: [result.mask.height, result.mask.width],
       status: "candidate",
@@ -390,6 +414,39 @@ export async function getHistory(
         : null,
     },
     corrections: corrections.map(toCorrectionResponse),
+  };
+}
+
+export interface SegmentationByIdResponse {
+  segmentationId: number;
+  status: repo.SegmentationStatus;
+  model: string | null;
+  modelVersion: string | null;
+  maskRle: repo.Rle | null;
+  maskShape: repo.MaskShape | null;
+  createdBy: string;
+  createdAt: string;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+}
+
+/** One persisted candidate by its id (DB read), or 404. The correction chain
+ * is served separately by {@link getHistory} (`/:id/corrections`). */
+export async function getSegmentationById(
+  segmentationId: number,
+): Promise<SegmentationByIdResponse> {
+  const s = await requireSegmentation(segmentationId);
+  return {
+    segmentationId: s.id,
+    status: s.status,
+    model: s.modelId,
+    modelVersion: s.modelVersion,
+    maskRle: s.maskRle,
+    maskShape: s.maskShape,
+    createdBy: s.createdByEmail,
+    createdAt: s.createdAt.toISOString(),
+    reviewedBy: s.reviewedByEmail,
+    reviewedAt: s.reviewedAt ? s.reviewedAt.toISOString() : null,
   };
 }
 

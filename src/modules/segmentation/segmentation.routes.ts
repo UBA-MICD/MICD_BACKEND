@@ -36,6 +36,13 @@ segmentationRouter.get(
   ctrl.getSegmentationHistory,
 );
 
+segmentationRouter.get(
+  "/segmentation/:id",
+  requireAuth,
+  requireRole("admin", "medico", "investigador"),
+  ctrl.getSegmentationById,
+);
+
 segmentationRouter.post(
   "/segmentation/:id/corrections",
   requireAuth,
