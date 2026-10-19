@@ -46,7 +46,7 @@ app.use("/api", healthRouter); // public: /api/livez, /api/readyz, /api/health (
 app.use(studiesRouter); // /api/studies*, /api/v1/studies* (auth-gated)
 app.use(uploadRouter); // /api/v1/studies/upload, /api/instances (auth-gated)
 app.use("/api/v1/pathologies", pathologiesRouter); // pathology catalog (auth-gated)
-app.use("/api/v1/ml", segmentationRouter); // AI segmentation, mock SAM3 (auth-gated)
+app.use("/api/v1/ml", segmentationRouter); // AI segmentation via the inference service (auth-gated)
 app.use("/api/v1/zenodo", zenodoRouter); // Zenodo integration (auth-gated)
 app.use("/api/v1/activity", activityRouter); // Audit log reader (admin-only)
 app.use("/api/v1/users", usersRouter); // User management (admin-only)

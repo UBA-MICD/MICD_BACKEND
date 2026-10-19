@@ -4,20 +4,19 @@ import * as service from "./segmentation.service";
 
 /**
  * POST /api/v1/ml/segmentation
+ * Body: { sopInstanceUid, seed?, points?, smoothingPasses? }
  *
- * Segment one image. Image-scoped rather than study-scoped on purpose: the
- * viewer also opens DICOM files straight off the local disk, which have no
- * Orthanc study id, and the segmentation only ever needs Rows/Columns plus the
- * source UIDs it echoes back as the derived image's reference.
- *
- * When the request carries a source SOP Instance UID the candidate is persisted
- * (so it can be corrected later, US-45) under the requesting user.
+ * Segment one image stored on the server: the DICOM is fetched from Orthanc by
+ * its SOP Instance UID and run through the inference service (TK-44). The
+ * candidate is persisted under the requesting user so it can be corrected
+ * later (US-45). Images opened off the local disk get a 422.
  */
 export const segmentImage: RequestHandler = async (req, res) => {
   try {
     const body = (req.body ?? {}) as service.SegmentationRequest;
     const result = await service.runSegmentation(body, {
       userId: Number(req.user!.sub),
+      ip: req.ip ?? "",
     });
     res.status(201).json(result);
   } catch (err) {
