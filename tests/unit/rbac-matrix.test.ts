@@ -133,6 +133,7 @@ const segmentation: Expected[] = [
   { method: "post", path: "/segmentation", roles: VIEW },
   { method: "get", path: "/segmentation", roles: VIEW },
   { method: "get", path: "/segmentation/:id/corrections", roles: VIEW },
+  { method: "get", path: "/segmentation/:id", roles: VIEW },
   {
     method: "post",
     path: "/segmentation/:id/corrections",
@@ -174,9 +175,9 @@ describe("RBAC route matrix", () => {
     });
   }
 
-  it("gates 44 authenticated endpoints in total", () => {
+  it("gates 45 authenticated endpoints in total", () => {
     const total = suites.reduce((sum, [, r]) => sum + gatedRouteCount(r), 0);
-    expect(total).toBe(44);
+    expect(total).toBe(45);
   });
 
   it("informatico reaches only upload, study list/download and the pathology catalog", () => {
