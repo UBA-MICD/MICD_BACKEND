@@ -14,6 +14,7 @@ import { inferenceConfig } from "../../config/env";
 import { orthancClient } from "../../clients/orthanc.client";
 import {
   segmentDicom,
+  buildSeg,
   type InferenceResult,
 } from "../../clients/inference.client";
 import * as repo from "./segmentation.repository";
@@ -344,7 +345,62 @@ export async function acceptSegmentation(params: {
     ip: params.ip,
     detail: { status: "accepted" },
   });
+  // Al aceptar, exportar un DICOM SEG a Orthanc (TK-45). Best-effort: no debe
+  // hacer fallar el accept.
+  await exportAcceptedSeg(params.segmentationId, params);
   return getHistory(params.segmentationId);
+}
+
+/**
+ * Best-effort: construye un DICOM SEG del candidato aceptado y lo hace C-STORE a
+ * Orthanc como serie derivada (TK-45), guardando los UIDs. Nunca lanza al caller
+ * — un fallo acá no debe tumbar el accept; se loguea y se audita.
+ */
+async function exportAcceptedSeg(
+  segmentationId: number,
+  ctx: { userId: number; ip: string },
+): Promise<void> {
+  try {
+    const seg = await repo.findSegmentationById(segmentationId);
+    if (!seg || !seg.maskRle) return;
+    const stored = await repo.findStoredInstance(seg.instanceId);
+    if (!stored) return; // no está en el servidor (no debería, para un candidato)
+
+    // La máscara aceptada es la última corrección humana si existe, si no el candidato.
+    const corrections = await repo.listCorrections(segmentationId); // newest first
+    const rle = corrections[0]?.correctedRle ?? seg.maskRle;
+
+    const dicom = await fetchSourceDicom(stored.orthancInstanceId);
+    const built = await buildSeg(dicom, rle, {
+      label: "Segmentación IA (MICD)",
+    });
+    await orthancClient.postInstance(built.dicom);
+    await repo.setSegDerived(segmentationId, {
+      sopInstanceUid: built.sopInstanceUid,
+      seriesInstanceUid: built.seriesInstanceUid,
+    });
+    void logAction({
+      userId: ctx.userId,
+      action: AUDIT_ACTIONS.AI_SEGMENTATION_REVIEWED,
+      resourceId: String(segmentationId),
+      ip: ctx.ip,
+      detail: { segExported: true, segSopInstanceUid: built.sopInstanceUid },
+    });
+  } catch (err) {
+    console.error(
+      `[segmentation] SEG export failed for #${segmentationId}: ${(err as Error)?.message}`,
+    );
+    void logAction({
+      userId: ctx.userId,
+      action: AUDIT_ACTIONS.AI_SEGMENTATION_REVIEWED,
+      resourceId: String(segmentationId),
+      ip: ctx.ip,
+      detail: {
+        segExported: false,
+        error: (err as Error)?.message ?? "unknown",
+      },
+    });
+  }
 }
 
 /** Discard the whole segmentation (reject it). */

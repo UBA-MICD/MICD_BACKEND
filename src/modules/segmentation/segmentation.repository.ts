@@ -245,6 +245,21 @@ export async function updateSegmentationStatus(
   return findSegmentationById(id);
 }
 
+/** Record the derived DICOM SEG object exported to Orthanc (TK-45). */
+export async function setSegDerived(
+  id: number,
+  seg: { sopInstanceUid: string; seriesInstanceUid: string },
+): Promise<void> {
+  await pool.query(
+    `UPDATE ml_segmentations
+        SET seg_sop_instance_uid = $2,
+            seg_series_instance_uid = $3,
+            seg_exported_at = NOW()
+      WHERE id = $1`,
+    [id, seg.sopInstanceUid, seg.seriesInstanceUid],
+  );
+}
+
 export async function insertCorrection(params: {
   segmentationId: number;
   studyId?: string | null;
