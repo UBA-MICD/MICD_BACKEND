@@ -231,3 +231,121 @@ export async function segmentDicom(
     error: `El servicio de inferencia respondió con un error (${status}).`,
   });
 }
+
+export interface SegResult {
+  /** The DICOM SEG object bytes, ready to C-STORE to Orthanc. */
+  dicom: Buffer;
+  /** UIDs the service minted, echoed in response headers for persistence. */
+  sopInstanceUid: string;
+  seriesInstanceUid: string;
+}
+
+export interface BuildSegOptions {
+  label?: string;
+  seriesDescription?: string;
+}
+
+/**
+ * Build a standard DICOM SEG from a stored mask + its source DICOM, via the
+ * inference service (`POST /segmentation/seg`). Returns the SEG bytes plus the
+ * minted UIDs (from `X-Seg-*` headers) so the caller can C-STORE it to Orthanc
+ * and record the link. Transport outcomes map the same way as `segmentDicom`.
+ */
+export async function buildSeg(
+  dicom: Buffer,
+  maskRle: number[],
+  options: BuildSegOptions = {},
+): Promise<SegResult> {
+  const form = new FormData();
+  const bytes = new Uint8Array(
+    dicom.buffer,
+    dicom.byteOffset,
+    dicom.byteLength,
+  );
+  form.append(
+    "file",
+    new Blob([bytes], { type: "application/dicom" }),
+    "image.dcm",
+  );
+  form.append("mask_rle", JSON.stringify(maskRle));
+  if (options.label) form.append("label", options.label);
+  if (options.seriesDescription) {
+    form.append("series_description", options.seriesDescription);
+  }
+
+  let status: number;
+  let data: unknown;
+  let headers: Record<string, string> = {};
+  try {
+    const res = await axios.post(
+      `${inferenceConfig.url}/segmentation/seg`,
+      form,
+      {
+        timeout: inferenceConfig.timeoutMs,
+        responseType: "arraybuffer",
+        validateStatus: () => true,
+        headers: inferenceConfig.apiKey
+          ? { "X-Inference-Key": inferenceConfig.apiKey }
+          : undefined,
+      },
+    );
+    status = res.status;
+    data = res.data;
+    headers = res.headers as Record<string, string>;
+  } catch (err) {
+    const code = (err as { code?: string })?.code ?? "";
+    console.error(
+      `[inference] POST /segmentation/seg failed: ${code || (err as Error)?.message}`,
+    );
+    if (TIMEOUT_CODES.has(code)) {
+      throw new HttpError(504, {
+        error: "El servicio de inferencia tardó demasiado en responder.",
+      });
+    }
+    throw unavailable();
+  }
+
+  if (status === 200) {
+    const sopInstanceUid = headers["x-seg-sop-instance-uid"];
+    const seriesInstanceUid = headers["x-seg-series-instance-uid"];
+    if (!isStr(sopInstanceUid) || !isStr(seriesInstanceUid)) {
+      console.error("[inference] /segmentation/seg missing X-Seg-* headers");
+      throw new HttpError(502, {
+        error: "El servicio de inferencia devolvió una respuesta inválida.",
+      });
+    }
+    return {
+      dicom: Buffer.from(data as ArrayBuffer),
+      sopInstanceUid,
+      seriesInstanceUid,
+    };
+  }
+
+  // Error bodies come back as an ArrayBuffer of JSON under responseType.
+  let detail: unknown;
+  try {
+    detail = JSON.parse(
+      Buffer.from(data as ArrayBuffer).toString("utf8"),
+    )?.detail;
+  } catch {
+    detail = undefined;
+  }
+  console.error(`[inference] /segmentation/seg answered ${status}`);
+  if (status === 400 || status === 422) {
+    throw new HttpError(422, {
+      error:
+        typeof detail === "string"
+          ? detail
+          : "No se pudo construir el DICOM SEG.",
+    });
+  }
+  if (status === 503) throw unavailable();
+  if (status === 401 || status === 403) {
+    console.error(
+      "[inference] the service rejected AI_INFERENCE_API_KEY — check that it matches INFERENCE_API_KEY",
+    );
+  }
+  throw new HttpError(502, {
+    error: `El servicio de inferencia respondió con un error (${status}).`,
+  });
+}

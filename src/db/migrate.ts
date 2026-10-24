@@ -15,6 +15,7 @@ import { migration013 } from "./migrations/013_segmentations";
 import { migration014 } from "./migrations/014_pathologies";
 import { migration015 } from "./migrations/015_anonymization_review";
 import { migration016 } from "./migrations/016_password_resets";
+import { migration017 } from "./migrations/017_segmentation_seg";
 
 /**
  * A single migration statement. Either raw SQL (may contain several
@@ -54,6 +55,7 @@ const migrations: Migration[] = [
   migration014,
   migration015,
   migration016,
+  migration017,
 ];
 
 /** Apply every migration in order. Idempotent — safe to call on each boot. */
