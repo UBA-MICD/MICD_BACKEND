@@ -34,9 +34,6 @@ describe("POST /auth/login", () => {
     expect(data.user).toMatchObject({ email: TEST_EMAIL });
   });
 
-  // Counts as 1 of the 5 failed attempts allowed before the IP is blocked —
-  // the rate-limit test below relies on this and the next test contributing
-  // to the same counter (express-rate-limit keys by IP, not by email).
   it("returns 401 for an incorrect password", async () => {
     if (!backendAvailable) return;
     await expect(
@@ -47,7 +44,6 @@ describe("POST /auth/login", () => {
     ).rejects.toMatchObject({ response: { status: 401 } });
   });
 
-  // Counts as the 2nd of the 5 failed attempts (see note above).
   it("returns 401 for an unknown email (same generic message — no user enumeration)", async () => {
     if (!backendAvailable) return;
     let wrongPasswordError: any;
@@ -176,23 +172,25 @@ describe("POST /auth/logout", () => {
 });
 
 describe("login rate limiting", () => {
-  it("blocks the IP with 429 after more than 5 failed attempts in the window", async () => {
+  it("blocks the IP with 429 once the failed-attempt budget is spent", async () => {
     if (!backendAvailable) return;
-    // Two failed attempts already happened above in this file (wrong
-    // password + unknown email) — they share the same rate-limit counter
-    // (keyed by client IP, not by email). Send enough additional failures
-    // here to cross the max:5 threshold and assert the next one is 429.
-    let lastStatus = 0;
-    for (let i = 0; i < 5; i++) {
-      try {
-        await axios.post(`${BASE_URL}/auth/login`, {
-          email: TEST_EMAIL,
-          password: `still-wrong-${i}`,
-        });
-      } catch (err: any) {
-        lastStatus = err.response?.status;
-      }
+    // The limiter keys on req.ip. The backend trusts one proxy hop by default,
+    // so a dedicated X-Forwarded-For gives this test its own counter: tripping
+    // it must not block the runner's IP, which every other suite logs in from.
+    const max = parseInt(process.env.RATE_LIMIT_LOGIN_MAX ?? "5", 10);
+    const headers = { "X-Forwarded-For": "198.51.100.77" };
+    const attempt = () =>
+      axios
+        .post(
+          `${BASE_URL}/auth/login`,
+          { email: TEST_EMAIL, password: "still-wrong" },
+          { headers, validateStatus: () => true },
+        )
+        .then((res) => res.status);
+
+    for (let i = 0; i < max; i++) {
+      expect(await attempt()).toBe(401);
     }
-    expect(lastStatus).toBe(429);
+    expect(await attempt()).toBe(429);
   });
 });
