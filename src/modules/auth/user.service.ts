@@ -16,9 +16,17 @@ export interface User {
   status: string;
 }
 
+/**
+ * The account for an email. Since migration 017 one email may have a live row
+ * plus any number of deleted tombstones; the live one always wins, and among
+ * tombstones the newest.
+ */
 export async function findUserByEmail(email: string): Promise<User | null> {
   const { rows } = await pool.query<User>(
-    "SELECT id, email, password, role, status FROM users WHERE email = $1",
+    `SELECT id, email, password, role, status FROM users
+      WHERE email = $1
+      ORDER BY (status = 'deleted'), id DESC
+      LIMIT 1`,
     [email],
   );
   return rows[0] ?? null;
@@ -37,13 +45,16 @@ export async function stampLastLogin(id: number): Promise<void> {
   await pool.query("UPDATE users SET last_login_at = NOW() WHERE id = $1", [id]);
 }
 
-/** Set a redeemed invitee's password and flip the account to active. */
+/**
+ * Set a redeemed invitee's password and flip the account to active. Only an
+ * `invited` row is touched — never a deleted/blocked one.
+ */
 export async function setPasswordAndActivate(
   id: number,
   passwordHash: string,
 ): Promise<void> {
   await pool.query(
-    "UPDATE users SET password = $2, status = 'active' WHERE id = $1",
+    "UPDATE users SET password = $2, status = 'active' WHERE id = $1 AND status = 'invited'",
     [id, passwordHash],
   );
 }

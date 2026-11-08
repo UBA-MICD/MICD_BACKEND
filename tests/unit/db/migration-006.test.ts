@@ -57,8 +57,8 @@ describe("buildRolesMigrationStatements", () => {
 
     // password must be bound, never present as a literal in the SQL text
     expect(seed.text).not.toContain("s3cr3t-passphrase");
-    expect(seed.text).toContain("crypt($2, gen_salt('bf', 12))");
-    expect(seed.text).toContain("ON CONFLICT (email) DO NOTHING");
+    expect(seed.text).toContain("crypt($2::text, gen_salt('bf', 12))");
+    expect(seed.text).toContain("WHERE NOT EXISTS (SELECT 1 FROM users WHERE email = $1::text)");
     expect(seed.values).toEqual([
       "admin@micd.local",
       "s3cr3t-passphrase",

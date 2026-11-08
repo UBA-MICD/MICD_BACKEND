@@ -50,7 +50,10 @@ export async function issueInvite(userId: number): Promise<string> {
   return code;
 }
 
-/** The email an unconsumed, unexpired code belongs to, or null. */
+/**
+ * The email an unconsumed, unexpired code belongs to, or null. The account must
+ * still be `invited` — a code for a deleted (or already active) user is dead.
+ */
 export async function findValidInvite(code: string): Promise<InviteInfo | null> {
   const { rows } = await pool.query<{ user_id: number; email: string }>(
     `SELECT ui.user_id, u.email
@@ -58,7 +61,8 @@ export async function findValidInvite(code: string): Promise<InviteInfo | null> 
        JOIN users u ON u.id = ui.user_id
       WHERE ui.code_hash = $1
         AND ui.consumed_at IS NULL
-        AND ui.expires_at > NOW()`,
+        AND ui.expires_at > NOW()
+        AND u.status = 'invited'`,
     [hashInviteCode(code)],
   );
   return rows[0] ? { userId: rows[0].user_id, email: rows[0].email } : null;
@@ -66,14 +70,18 @@ export async function findValidInvite(code: string): Promise<InviteInfo | null> 
 
 /**
  * Atomically consume a valid code, returning the user_id it belonged to — or
- * null if it was missing/expired/already used. One UPDATE, no read-then-write
+ * null if it was missing/expired/already used, or the account is no longer
+ * `invited` (deleted after the code was sent). One UPDATE, no read-then-write
  * gap, so two concurrent redemptions can't both succeed.
  */
 export async function consumeInvite(code: string): Promise<number | null> {
   const { rows } = await pool.query<{ user_id: number }>(
-    `UPDATE user_invites SET consumed_at = NOW()
-      WHERE code_hash = $1 AND consumed_at IS NULL AND expires_at > NOW()
-      RETURNING user_id`,
+    `UPDATE user_invites ui SET consumed_at = NOW()
+       FROM users u
+      WHERE u.id = ui.user_id
+        AND u.status = 'invited'
+        AND ui.code_hash = $1 AND ui.consumed_at IS NULL AND ui.expires_at > NOW()
+      RETURNING ui.user_id`,
     [hashInviteCode(code)],
   );
   return rows[0]?.user_id ?? null;
