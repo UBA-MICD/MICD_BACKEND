@@ -12,6 +12,13 @@ const TEST_PASSWORD = process.env.TEST_USER_PASSWORD ?? "testpassword";
 
 let backendAvailable = false;
 
+// This suite deliberately trips the per-IP login limiter. Give it its own client
+// IP (the backend trusts one proxy hop, TRUST_PROXY=1, so req.ip comes from
+// X-Forwarded-For) so the lockout can't 429 the real logins other suites make in
+// their beforeAll — which, with suites in parallel, raced depending on scheduling.
+// Jest isolates modules per test file, so this default only affects this file.
+axios.defaults.headers.common["X-Forwarded-For"] = "198.51.100.77";
+
 beforeAll(async () => {
   try {
     await axios.get(`${BASE_URL}/api/health`, { timeout: 3000 });
