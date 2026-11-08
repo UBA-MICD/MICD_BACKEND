@@ -74,7 +74,7 @@ const DDL = `
  * Build the ordered statements. The admin seed is appended only when both
  * ADMIN_EMAIL and ADMIN_PASSWORD are present; the password is bound as a query
  * parameter (never string-interpolated) and hashed in-database with pgcrypto,
- * matching 002's seeding style. ON CONFLICT DO NOTHING keeps it a one-time seed
+ * matching 002's seeding style. WHERE NOT EXISTS keeps it a one-time seed
  * that never overwrites an existing admin's password on later boots.
  */
 export function buildRolesMigrationStatements(): MigrationStatement[] {
@@ -82,9 +82,10 @@ export function buildRolesMigrationStatements(): MigrationStatement[] {
   const { email, password, name } = adminSeed;
   if (email && password) {
     stmts.push({
+      // WHERE NOT EXISTS, not ON CONFLICT (email): see migration 017.
       text: `INSERT INTO users (email, password, role, status, name)
-             VALUES ($1, crypt($2, gen_salt('bf', 12)), 'admin', 'active', $3)
-             ON CONFLICT (email) DO NOTHING`,
+             SELECT $1::text, crypt($2::text, gen_salt('bf', 12)), 'admin', 'active', $3::text
+             WHERE NOT EXISTS (SELECT 1 FROM users WHERE email = $1::text)`,
       values: [email, password, name],
     });
   }
