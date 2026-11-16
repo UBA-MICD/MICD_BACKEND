@@ -63,9 +63,12 @@ export const migration002 = {
     ALTER TABLE users DROP COLUMN IF EXISTS email_verified;
     ALTER TABLE users DROP COLUMN IF EXISTS updated_at;`,
     `CREATE EXTENSION IF NOT EXISTS pgcrypto;`,
+    // WHERE NOT EXISTS rather than ON CONFLICT (email): since 017 the email is
+    // only unique among non-deleted rows, so there is no full unique index to
+    // infer. Checking ANY row keeps this a one-time seed.
     `INSERT INTO users (email, password)
-    VALUES ('test@micd.local', crypt('testpassword', gen_salt('bf', 12)))
-    ON CONFLICT (email) DO NOTHING;`,
+    SELECT 'test@micd.local', crypt('testpassword', gen_salt('bf', 12))
+    WHERE NOT EXISTS (SELECT 1 FROM users WHERE email = 'test@micd.local');`,
     `CREATE TABLE IF NOT EXISTS refresh_tokens (
       id          SERIAL PRIMARY KEY,
       user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

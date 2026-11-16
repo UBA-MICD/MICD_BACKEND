@@ -83,6 +83,8 @@ services:
       BCRYPT_ROUNDS: 4
       # The recovery suite makes more requests than the production per-IP budget.
       RATE_LIMIT_PASSWORD_RESET_MAX: 100
+      # The invite + user-lifecycle suites together exceed the default 20.
+      RATE_LIMIT_INVITE_MAX: 100
     depends_on:
       postgres:
         condition: service_healthy

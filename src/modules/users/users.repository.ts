@@ -2,6 +2,7 @@ import type { PoolClient } from "pg";
 import { pool } from "../../db/pool";
 import { Role } from "../../shared/roles";
 import { revokeAllRefreshTokensForUser } from "../auth/refresh-token.service";
+import { consumeAllResetsForUser } from "../auth/password-reset.service";
 
 /** A user row as surfaced to the admin panel (never includes the password). */
 export interface UserRow {
@@ -41,7 +42,9 @@ export async function findUserRow(id: number): Promise<UserRow | null> {
 
 /**
  * Create an invited user: name + email + role, no password yet, status
- * 'invited'. Returns null if the email is already taken.
+ * 'invited'. Returns null if a live (non-deleted) account already has the email.
+ * A deleted account does not block it: email uniqueness is a partial index over
+ * non-deleted rows (migration 017), so this inserts a brand-new row.
  */
 export async function insertInvitedUser(
   name: string,
@@ -51,7 +54,7 @@ export async function insertInvitedUser(
   const { rows } = await pool.query<UserRow>(
     `INSERT INTO users (name, email, role, status, password)
      VALUES ($1, $2, $3, 'invited', NULL)
-     ON CONFLICT (email) DO NOTHING
+     ON CONFLICT (email) WHERE status <> 'deleted' DO NOTHING
      RETURNING ${SELECT_COLUMNS}`,
     [name, email, role],
   );
@@ -160,8 +163,10 @@ export async function updateStatus(
 }
 
 /**
- * Soft-delete: set status 'deleted' and revoke refresh tokens. Refuses to
- * delete the last effective admin. Never a hard DELETE (would orphan the audit
+ * Soft-delete: set status 'deleted', revoke refresh tokens and void any
+ * outstanding invite / password-reset code (an emailed link must never act on a
+ * deleted account). Refuses to delete the last effective admin. Frees the email
+ * for a future re-invite (migration 017). Never a hard DELETE (would orphan the audit
  * trail and zenodo_config.created_by).
  */
 export async function softDeleteUser(id: number): Promise<MutationResult> {
@@ -182,6 +187,11 @@ export async function softDeleteUser(id: number): Promise<MutationResult> {
       [id],
     );
     await revokeAllRefreshTokensForUser(id, client);
+    await client.query(
+      "UPDATE user_invites SET consumed_at = NOW() WHERE user_id = $1 AND consumed_at IS NULL",
+      [id],
+    );
+    await consumeAllResetsForUser(id, client);
     return { ok: true, user: updated[0] };
   });
 }
