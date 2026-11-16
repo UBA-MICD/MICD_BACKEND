@@ -14,7 +14,7 @@ import { getAuthHeader, getAuthHeaderFor } from "../helpers/auth";
 const BASE_URL = process.env.BACKEND_URL ?? "http://localhost:3000";
 const SAMPLE_DCM = path.resolve(
   __dirname,
-  "../../.data.example/series-000001/image-000001.dcm",
+  "../fixtures/anonymized-ct.dcm",
 );
 
 let backendAvailable = false;
