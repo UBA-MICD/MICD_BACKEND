@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { requireAuth, requireRole } from "../../middleware/auth.middleware";
+import { segmentationRateLimiter } from "../../middleware/rate-limit.middleware";
 import * as ctrl from "./segmentation.controller";
 
 /**
@@ -17,6 +18,7 @@ segmentationRouter.post(
   "/segmentation",
   requireAuth,
   requireRole("admin", "medico", "investigador"),
+  segmentationRateLimiter,
   ctrl.segmentImage,
 );
 
@@ -32,6 +34,13 @@ segmentationRouter.get(
   requireAuth,
   requireRole("admin", "medico", "investigador"),
   ctrl.getSegmentationHistory,
+);
+
+segmentationRouter.get(
+  "/segmentation/:id",
+  requireAuth,
+  requireRole("admin", "medico", "investigador"),
+  ctrl.getSegmentationById,
 );
 
 segmentationRouter.post(

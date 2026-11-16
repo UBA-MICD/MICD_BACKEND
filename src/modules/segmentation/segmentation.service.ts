@@ -1,18 +1,22 @@
 /**
- * segmentation.service.ts — AI segmentation (mocked SAM3).
+ * segmentation.service.ts — AI segmentation (US-41 / TK-44).
  *
- * The whole point of this module is to be thrown away: it produces the exact
- * response shape a real SAM3 inference service would, so the browser client
- * never has to change when the model lands. See `runSegmentation` for the one
- * call site that has to be swapped.
+ * The segmentation itself runs in the Python inference service (MICD_TRAINING).
+ * This module fetches the source DICOM from Orthanc, forwards it, persists the
+ * returned candidate so it can be corrected (US-45), and hands the viewer the
+ * response unchanged — the contract is the one the service already returns.
  */
 
+import axios from "axios";
 import { HttpError, isHttpError } from "../../shared/http-error";
-import { logAction, AUDIT_ACTIONS } from "../../shared/audit";
+import { logAction, AUDIT_ACTIONS, type AuditAction } from "../../shared/audit";
+import { inferenceConfig } from "../../config/env";
+import { orthancClient } from "../../clients/orthanc.client";
 import {
-  generateSegmentationShape,
-  type Point2D,
-} from "./segmentation.geometry";
+  segmentDicom,
+  buildSeg,
+  type InferenceResult,
+} from "../../clients/inference.client";
 import * as repo from "./segmentation.repository";
 
 export type {
@@ -26,107 +30,62 @@ export type {
 // ── Contract ─────────────────────────────────────────────────────────────────
 
 export interface SegmentationRequest {
-  /** DICOM Columns (0028,0011) of the source image. */
-  columns: number;
-  /** DICOM Rows (0028,0010) of the source image. */
-  rows: number;
-  /** Optional seed. Omitted ⇒ a fresh random shape on every call. */
-  seed?: number;
-  /** Source instance, echoed back as the derived image's reference. */
-  sopInstanceUid?: string;
-  sopClassUid?: string;
-  studyInstanceUid?: string;
-  /** Polar vertices before smoothing (16-512, default 96). */
-  points?: number;
-  /** Chaikin smoothing passes (0-4, default 2). */
-  smoothingPasses?: number;
-}
-
-export interface SegmentationResponse {
   /**
-   * DB id of the persisted candidate, or null when nothing was persisted
-   * (image opened off local disk with no source UID). The client needs this id
-   * to submit corrections against the candidate (US-45).
+   * Source instance. Required: the image is fetched from Orthanc by this UID,
+   * so a DICOM opened off the local disk (not on the server) can't be segmented.
+   * Any studyInstanceUid the client sends is ignored — the study is taken from
+   * the stored instance.
    */
-  segmentationId: number | null;
-  /** Echoed so the client can reproduce the exact same shape. */
-  seed: number;
-  /** Model identifier. `mock-sam3` tells the UI to show the "Simulado" badge. */
-  model: string;
-  simulated: boolean;
-  /** Closed outline in image pixel coordinates, in draw order. */
-  contour: Point2D[];
-  mask: {
-    width: number;
-    height: number;
-    /** Alternating run lengths, row-major, starting with a run of zeros. */
-    rle: number[];
-    pixelCount: number;
-  };
-  /** Metadata for the derived DICOM the client builds from the original. */
-  derived: {
-    sopInstanceUid: string;
-    seriesInstanceUid: string;
-    seriesDescription: string;
-    /** ReferencedImageSequence (0008,1140) > ReferencedSOPInstanceUID. */
-    referencedSopInstanceUid: string | null;
-    referencedSopClassUid: string | null;
-    /** DerivationDescription (0008,2111). */
-    derivationDescription: string;
-  };
-  /** Milliseconds the (simulated) inference took. */
-  inferenceMs: number;
+  sopInstanceUid?: unknown;
+  /** Optional seed (0..2^32-1), forwarded for reproducibility. */
+  seed?: unknown;
+  /** Polar vertices before smoothing (16-512, default 96). */
+  points?: unknown;
+  /** Chaikin smoothing passes (0-4, default 2). */
+  smoothingPasses?: unknown;
+  /**
+   * Frame to segment in a multi-frame image (0-based, default 0). The inference
+   * service validates it against the DICOM's NumberOfFrames.
+   */
+  frame?: unknown;
 }
 
-// ── Tunables ─────────────────────────────────────────────────────────────────
-
-/** Series description required for the derived series. */
-export const DERIVED_SERIES_DESCRIPTION = "Segmentación IA (mock SAM3)";
-
 /**
- * Simulated inference latency window. Wide enough that the client's spinner is
- * exercised the way a real GPU round-trip would exercise it.
+ * What the viewer receives: the inference service's response, with
+ * `segmentationId` set to the persisted candidate's id.
  */
-const MIN_LATENCY_MS = 1500;
-const MAX_LATENCY_MS = 2500;
-
-/**
- * UID root for everything this mock mints. `.999` is a deliberately fake
- * branch: a real deployment must register its own root before any derived
- * instance is written back to the PACS.
- */
-const MOCK_UID_ROOT = "1.2.826.0.1.3680043.10.1338.999";
-
-const MAX_IMAGE_SIDE = 8192;
+export type SegmentationResponse = InferenceResult;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+/** DICOM UID: dot-separated digits, at most 64 characters. */
+const DICOM_UID = /^[0-9]+(\.[0-9]+)*$/;
 
-/**
- * Mint a DICOM UID under the mock root. DICOM caps UIDs at 64 characters and
- * forbids leading zeros in a component, so each suffix component is a plain
- * positive integer.
- */
-export function mintUid(root: string = MOCK_UID_ROOT): string {
-  const timePart = Date.now();
-  const randomPart = Math.floor(Math.random() * 1_000_000_000);
-  const uid = `${root}.${timePart}.${randomPart}`;
-  return uid.length <= 64 ? uid : uid.slice(0, 64).replace(/\.$/, "");
-}
-
-function requireSide(value: unknown, field: string): number {
-  const n = Number(value);
-  if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) {
-    throw new HttpError(400, {
-      error: `El campo '${field}' debe ser un entero positivo.`,
+function requireUid(value: unknown): string {
+  if (value === undefined || value === null || value === "") {
+    throw new HttpError(422, {
+      error:
+        "La segmentación con IA requiere una imagen del servidor; las abiertas desde el disco local no se pueden segmentar.",
     });
   }
-  if (n > MAX_IMAGE_SIDE) {
+  if (
+    typeof value !== "string" ||
+    value.length > 64 ||
+    !DICOM_UID.test(value)
+  ) {
     throw new HttpError(400, {
-      error: `El campo '${field}' excede el máximo admitido (${MAX_IMAGE_SIDE}).`,
+      error: "El campo 'sopInstanceUid' no es un UID DICOM válido.",
+    });
+  }
+  return value;
+}
+
+function optionalSeed(value: unknown): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 0 || n > 0xffffffff) {
+    throw new HttpError(400, {
+      error: "El campo 'seed' debe ser un entero entre 0 y 4294967295.",
     });
   }
   return n;
@@ -137,9 +96,8 @@ function optionalInt(
   field: string,
   min: number,
   max: number,
-  fallback: number,
-): number {
-  if (value === undefined || value === null) return fallback;
+): number | undefined {
+  if (value === undefined || value === null) return undefined;
   const n = Number(value);
   if (!Number.isFinite(n)) {
     throw new HttpError(400, {
@@ -149,104 +107,128 @@ function optionalInt(
   return Math.min(max, Math.max(min, Math.round(n)));
 }
 
+/** 0-based frame index. The upper bound (NumberOfFrames) is enforced by the
+ * inference service, which reads it from the DICOM. */
+function optionalFrame(value: unknown): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 0) {
+    throw new HttpError(400, {
+      error: "El campo 'frame' debe ser un entero mayor o igual a 0.",
+    });
+  }
+  return n;
+}
+
+const notOnServer = (): HttpError =>
+  new HttpError(404, { error: "La imagen no está en el servidor." });
+
+/** The stored DICOM for an instance, or a 404 when the server doesn't have it. */
+async function fetchSourceDicom(orthancInstanceId: string): Promise<Buffer> {
+  try {
+    const res = await orthancClient.getInstanceFile(orthancInstanceId);
+    // Buffer.from(ArrayBuffer) is a view, not a copy.
+    return Buffer.from(res.data);
+  } catch (err) {
+    if (axios.isAxiosError(err) && err.response?.status === 404) {
+      throw notOnServer();
+    }
+    throw new HttpError(503, { error: "Orthanc no está disponible." });
+  }
+}
+
+/**
+ * Segmentations currently running. Each one holds a whole DICOM in memory and
+ * an inference call open, so past the cap a request is turned away (429)
+ * instead of queuing more work behind a busy model.
+ */
+let inFlight = 0;
+
 // ── Entry point ──────────────────────────────────────────────────────────────
 
 /**
- * Produce a segmentation for one image.
+ * Segment one image stored on the server.
  *
  * Keep this signature stable: the browser calls it through
- * `POST /api/v1/ml/segmentation` and does not know, or care, whether the mask
- * came from a model or from the generator below.
+ * `POST /api/v1/ml/segmentation`. Rows/Columns are no longer needed from the
+ * client — the inference service reads them from the DICOM itself. Every
+ * attempt that reaches the stored image is audited (TK-06), success or not.
  */
 export async function runSegmentation(
   input: SegmentationRequest,
-  context?: { userId?: number },
+  context: { userId: number; ip: string },
 ): Promise<SegmentationResponse> {
-  const columns = requireSide(input.columns, "columns");
-  const rows = requireSide(input.rows, "rows");
-  const points = optionalInt(input.points, "points", 16, 512, 96);
+  const sopInstanceUid = requireUid(input.sopInstanceUid);
+  const seed = optionalSeed(input.seed);
+  const points = optionalInt(input.points, "points", 16, 512);
   const smoothingPasses = optionalInt(
     input.smoothingPasses,
     "smoothingPasses",
     0,
     4,
-    2,
   );
+  const frame = optionalFrame(input.frame);
 
-  // A caller-supplied seed makes the result reproducible; without one every
-  // press of the button yields a different shape, which is what the UI wants.
-  const seed =
-    input.seed !== undefined && Number.isFinite(Number(input.seed))
-      ? Number(input.seed) >>> 0
-      : (Math.random() * 0xffffffff) >>> 0;
+  if (inFlight >= inferenceConfig.maxConcurrency) {
+    throw new HttpError(429, {
+      error:
+        "Hay demasiadas segmentaciones en curso. Intentá de nuevo en unos segundos.",
+    });
+  }
+  inFlight++;
 
-  const startedAt = Date.now();
+  const audit = (
+    action: AuditAction,
+    detail: Record<string, unknown>,
+  ): void => {
+    void logAction({
+      userId: context.userId,
+      action,
+      resourceId: sopInstanceUid,
+      ip: context.ip,
+      detail,
+    });
+  };
 
-  // MOCK: reemplazar por llamada a SAM3 ────────────────────────────────────
-  // Replace the sleep + generator below with the real inference call, e.g.:
-  //   const { contour, maskRle, pixelCount } = await sam3Client.segment({
-  //     pixelData, rows, columns, prompt,
-  //   });
-  // Everything after this block (UID minting, response assembly) stays as is.
-  const latency =
-    MIN_LATENCY_MS + Math.random() * (MAX_LATENCY_MS - MIN_LATENCY_MS);
-  await sleep(latency);
-  const shape = generateSegmentationShape({
-    columns,
-    rows,
-    seed,
-    points,
-    smoothingPasses,
-  });
-  // ─────────────────────────────────────────────────────────────────────────
+  try {
+    const stored = await repo.findStoredInstance(sopInstanceUid);
+    if (!stored) throw notOnServer();
 
-  const model = "mock-sam3";
+    const dicom = await fetchSourceDicom(stored.orthancInstanceId);
+    const result = await segmentDicom(dicom, {
+      seed,
+      points,
+      smoothingPasses,
+      frame,
+    });
 
-  // Persist the candidate so it can be corrected later (US-45). We can only do
-  // this when the image has a source instance UID to anchor it to — viewer
-  // sessions on local-disk DICOM have none, and stay in-memory as before.
-  let segmentationId: number | null = null;
-  if (input.sopInstanceUid && context?.userId) {
+    // Persist the candidate so it can be corrected later (US-45).
     const record = await repo.insertSegmentation({
-      studyId: input.studyInstanceUid ?? null,
-      instanceId: input.sopInstanceUid,
-      modelId: model,
-      modelVersion: null,
-      prompt: { seed, points, smoothingPasses },
-      maskRle: shape.maskRle,
-      maskShape: [rows, columns],
+      studyId: stored.studyInstanceUid,
+      instanceId: sopInstanceUid,
+      modelId: result.model,
+      modelVersion: result.modelVersion,
+      prompt: { seed: result.seed, points, smoothingPasses, frame },
+      maskRle: result.mask.rle,
+      maskShape: [result.mask.height, result.mask.width],
       status: "candidate",
       createdBy: context.userId,
     });
-    segmentationId = record.id;
-  }
 
-  return {
-    segmentationId,
-    seed,
-    model,
-    simulated: true,
-    contour: shape.contour.map((p) => ({
-      // Two decimals is well under a pixel and keeps the payload small.
-      x: Math.round(p.x * 100) / 100,
-      y: Math.round(p.y * 100) / 100,
-    })),
-    mask: {
-      width: columns,
-      height: rows,
-      rle: shape.maskRle,
-      pixelCount: shape.pixelCount,
-    },
-    derived: {
-      sopInstanceUid: mintUid(),
-      seriesInstanceUid: mintUid(),
-      seriesDescription: DERIVED_SERIES_DESCRIPTION,
-      referencedSopInstanceUid: input.sopInstanceUid || null,
-      referencedSopClassUid: input.sopClassUid || null,
-      derivationDescription: "Segmentación automática simulada (mock SAM3)",
-    },
-    inferenceMs: Date.now() - startedAt,
-  };
+    audit(AUDIT_ACTIONS.AI_SEGMENTATION_REQUESTED, {
+      segmentationId: record.id,
+      model: result.model,
+      simulated: result.simulated,
+    });
+    return { ...result, segmentationId: record.id };
+  } catch (err) {
+    audit(AUDIT_ACTIONS.AI_SEGMENTATION_FAILED, {
+      status: isHttpError(err) ? err.status : 500,
+    });
+    throw err;
+  } finally {
+    inFlight--;
+  }
 }
 
 // ── Corrections (US-45) ───────────────────────────────────────────────────────
@@ -387,7 +369,62 @@ export async function acceptSegmentation(params: {
     ip: params.ip,
     detail: { status: "accepted" },
   });
+  // Al aceptar, exportar un DICOM SEG a Orthanc (TK-45). Best-effort: no debe
+  // hacer fallar el accept.
+  await exportAcceptedSeg(params.segmentationId, params);
   return getHistory(params.segmentationId);
+}
+
+/**
+ * Best-effort: construye un DICOM SEG del candidato aceptado y lo hace C-STORE a
+ * Orthanc como serie derivada (TK-45), guardando los UIDs. Nunca lanza al caller
+ * — un fallo acá no debe tumbar el accept; se loguea y se audita.
+ */
+async function exportAcceptedSeg(
+  segmentationId: number,
+  ctx: { userId: number; ip: string },
+): Promise<void> {
+  try {
+    const seg = await repo.findSegmentationById(segmentationId);
+    if (!seg || !seg.maskRle) return;
+    const stored = await repo.findStoredInstance(seg.instanceId);
+    if (!stored) return; // no está en el servidor (no debería, para un candidato)
+
+    // La máscara aceptada es la última corrección humana si existe, si no el candidato.
+    const corrections = await repo.listCorrections(segmentationId); // newest first
+    const rle = corrections[0]?.correctedRle ?? seg.maskRle;
+
+    const dicom = await fetchSourceDicom(stored.orthancInstanceId);
+    const built = await buildSeg(dicom, rle, {
+      label: "Segmentación IA (MICD)",
+    });
+    await orthancClient.postInstance(built.dicom);
+    await repo.setSegDerived(segmentationId, {
+      sopInstanceUid: built.sopInstanceUid,
+      seriesInstanceUid: built.seriesInstanceUid,
+    });
+    void logAction({
+      userId: ctx.userId,
+      action: AUDIT_ACTIONS.AI_SEGMENTATION_REVIEWED,
+      resourceId: String(segmentationId),
+      ip: ctx.ip,
+      detail: { segExported: true, segSopInstanceUid: built.sopInstanceUid },
+    });
+  } catch (err) {
+    console.error(
+      `[segmentation] SEG export failed for #${segmentationId}: ${(err as Error)?.message}`,
+    );
+    void logAction({
+      userId: ctx.userId,
+      action: AUDIT_ACTIONS.AI_SEGMENTATION_REVIEWED,
+      resourceId: String(segmentationId),
+      ip: ctx.ip,
+      detail: {
+        segExported: false,
+        error: (err as Error)?.message ?? "unknown",
+      },
+    });
+  }
 }
 
 /** Discard the whole segmentation (reject it). */
@@ -433,6 +470,39 @@ export async function getHistory(
         : null,
     },
     corrections: corrections.map(toCorrectionResponse),
+  };
+}
+
+export interface SegmentationByIdResponse {
+  segmentationId: number;
+  status: repo.SegmentationStatus;
+  model: string | null;
+  modelVersion: string | null;
+  maskRle: repo.Rle | null;
+  maskShape: repo.MaskShape | null;
+  createdBy: string;
+  createdAt: string;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+}
+
+/** One persisted candidate by its id (DB read), or 404. The correction chain
+ * is served separately by {@link getHistory} (`/:id/corrections`). */
+export async function getSegmentationById(
+  segmentationId: number,
+): Promise<SegmentationByIdResponse> {
+  const s = await requireSegmentation(segmentationId);
+  return {
+    segmentationId: s.id,
+    status: s.status,
+    model: s.modelId,
+    modelVersion: s.modelVersion,
+    maskRle: s.maskRle,
+    maskShape: s.maskShape,
+    createdBy: s.createdByEmail,
+    createdAt: s.createdAt.toISOString(),
+    reviewedBy: s.reviewedByEmail,
+    reviewedAt: s.reviewedAt ? s.reviewedAt.toISOString() : null,
   };
 }
 
