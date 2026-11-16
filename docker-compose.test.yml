@@ -83,11 +83,8 @@ services:
       BCRYPT_ROUNDS: 4
       # The recovery suite makes more requests than the production per-IP budget.
       RATE_LIMIT_PASSWORD_RESET_MAX: 100
-      # Failed logins from the runner's IP are counted across every suite (wrong
-      # passwords, blocked users, ...). The production budget of 5 is far too
-      # tight for that; the rate-limit test uses its own forged client IP and
-      # reads this value, so it follows whatever is set here.
-      RATE_LIMIT_LOGIN_MAX: 50
+      # The invite + user-lifecycle suites together exceed the default 20.
+      RATE_LIMIT_INVITE_MAX: 100
     depends_on:
       postgres:
         condition: service_healthy
